@@ -16,6 +16,9 @@ import {
 } from "h3";
 
 import * as schema from "~~/db/schema";
+import getHealthHandler from "~~/server/api/health.get";
+import getLivenessHealthHandler from "~~/server/api/health/live.get";
+import getReadinessHealthHandler from "~~/server/api/health/ready.get";
 import deleteTodoListHandler from "~~/server/api/lists/[id].delete";
 import getTodoListByIdHandler from "~~/server/api/lists/[id].get";
 import updateTodoListHandler from "~~/server/api/lists/[id].patch";
@@ -75,6 +78,9 @@ async function closeServer(server: ReturnType<typeof createServer>) {
 export async function createListApiTestContext() {
   const testDatabase = createListTestDatabase();
   const router = createRouter()
+    .get("/health", getHealthHandler)
+    .get("/health/live", getLivenessHealthHandler)
+    .get("/health/ready", getReadinessHealthHandler)
     .get("/lists", getTodoListsHandler)
     .post("/lists", createTodoListHandler)
     .get("/lists/:id", getTodoListByIdHandler)

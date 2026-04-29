@@ -1,0 +1,101 @@
+name: ${COMPOSE_PROJECT_NAME:-aine-bmad-todo}
+
+x-app-healthcheck: &app-healthcheck
+  test: ["CMD", "node", "scripts/docker-healthcheck.mjs"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 20s
+
+x-app-service: &app-service
+  build:
+    context: .
+    target: deps
+  healthcheck: *app-healthcheck
+  init: true
+  networks:
+    - app-network
+  volumes:
+    - .:/app
+    - app_node_modules:/app/node_modules
+  working_dir: /app
+
+services:
+  app:
+    <<: *app-service
+    profiles: ["dev"]
+    command:
+      [
+        "sh",
+        "./scripts/docker-start.sh",
+        "npm",
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "${COMPOSE_APP_HOST:-0.0.0.0}",
+        "--port",
+        "${COMPOSE_APP_PORT:-3000}",
+      ]
+    environment:
+      APP_ENV: ${COMPOSE_APP_ENV:-development}
+      DATABASE_URL: ${COMPOSE_APP_DATABASE_URL:-/data/aine-bmad-todo.sqlite}
+      HEALTHCHECK_HOST: ${COMPOSE_HEALTHCHECK_HOST:-127.0.0.1}
+      HEALTHCHECK_PATH: ${COMPOSE_HEALTHCHECK_PATH:-/api/health/ready}
+      HOST: ${COMPOSE_APP_HOST:-0.0.0.0}
+      NODE_ENV: ${COMPOSE_APP_NODE_ENV:-development}
+      NITRO_HOST: ${COMPOSE_APP_HOST:-0.0.0.0}
+      NITRO_PORT: ${COMPOSE_APP_PORT:-3000}
+      PLAYWRIGHT_BASE_URL: ${COMPOSE_APP_PLAYWRIGHT_BASE_URL:-http://127.0.0.1:3000}
+      PORT: ${COMPOSE_APP_PORT:-3000}
+      RUN_DB_MIGRATIONS: ${COMPOSE_RUN_DB_MIGRATIONS:-true}
+    ports:
+      - "${COMPOSE_APP_PORT:-3000}:${COMPOSE_APP_PORT:-3000}"
+    volumes:
+      - .:/app
+      - app_node_modules:/app/node_modules
+      - app_data:/data
+
+  app-test:
+    <<: *app-service
+    profiles: ["test"]
+    command:
+      [
+        "sh",
+        "./scripts/docker-start.sh",
+        "npm",
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "${COMPOSE_TEST_HOST:-0.0.0.0}",
+        "--port",
+        "${COMPOSE_TEST_PORT:-3002}",
+      ]
+    environment:
+      APP_ENV: ${COMPOSE_TEST_ENV:-test}
+      DATABASE_URL: ${COMPOSE_TEST_DATABASE_URL:-/data/aine-bmad-todo.test.sqlite}
+      HEALTHCHECK_HOST: ${COMPOSE_HEALTHCHECK_HOST:-127.0.0.1}
+      HEALTHCHECK_PATH: ${COMPOSE_HEALTHCHECK_PATH:-/api/health/ready}
+      HOST: ${COMPOSE_TEST_HOST:-0.0.0.0}
+      NODE_ENV: ${COMPOSE_TEST_NODE_ENV:-test}
+      NITRO_HOST: ${COMPOSE_TEST_HOST:-0.0.0.0}
+      NITRO_PORT: ${COMPOSE_TEST_PORT:-3002}
+      PLAYWRIGHT_BASE_URL: ${COMPOSE_TEST_PLAYWRIGHT_BASE_URL:-http://127.0.0.1:3002}
+      PORT: ${COMPOSE_TEST_PORT:-3002}
+      RUN_DB_MIGRATIONS: ${COMPOSE_RUN_DB_MIGRATIONS:-true}
+    ports:
+      - "${COMPOSE_TEST_PORT:-3002}:${COMPOSE_TEST_PORT:-3002}"
+    volumes:
+      - .:/app
+      - app_node_modules:/app/node_modules
+      - app_test_data:/data
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  app_data:
+  app_node_modules:
+  app_test_data:
