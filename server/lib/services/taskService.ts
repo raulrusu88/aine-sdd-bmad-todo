@@ -2,10 +2,20 @@ import type {
   CreateTaskRequest,
   DeleteTaskResponse,
   Task,
+  TaskTag,
   UpdateTaskRequest,
 } from "~~/shared/types/api";
 
+import { getDb } from "~~/db/client";
+
 import type { DbClient } from "~~/db/client";
+import type { NewTaskTagRecord, TaskTagRecord } from "~~/db/schema/taskTags";
+
+import {
+  updateTaskRequestSchema,
+  normalizeTaskTagName,
+  normalizeTaskTagNameForComparison,
+} from "~~/shared/schemas/index";
 
 import { AppError } from "../errors/AppError";
 import { errorCodes } from "../errors/errorCodes";
@@ -15,9 +25,12 @@ import {
   deleteTaskById,
   findTaskById,
   listTasksByListId,
+  listTaskTagsByTaskIds,
+  replaceTaskTags,
   updateTaskById,
 } from "../repositories/taskRepository";
 import { mapTaskRecordToTask } from "../mappers/taskMapper";
+import { formatZodIssues } from "../utils/validation";
 
 function createTaskNotFoundError(): AppError {
   return new AppError(errorCodes.NOT_FOUND, "Task not found.", {
@@ -53,6 +66,56 @@ function createTaskPersistenceError(message: string): AppError {
   });
 }
 
+function createTaskValidationError(details: Record<string, unknown>): AppError {
+  return new AppError(
+    errorCodes.VALIDATION_ERROR,
+    "Please enter valid task details.",
+    {
+      details,
+      statusCode: 400,
+    },
+  );
+}
+
+function groupTaskTagsByTaskId(
+  records: TaskTagRecord[],
+): Record<string, TaskTag[]> {
+  return records.reduce<Record<string, TaskTag[]>>((groupedTags, record) => {
+    groupedTags[record.taskId] ??= [];
+    groupedTags[record.taskId].push(record.name);
+
+    return groupedTags;
+  }, {});
+}
+
+function createTaskTagRecords(
+  taskId: string,
+  tags: TaskTag[],
+): NewTaskTagRecord[] {
+  const baseTimestamp = Date.now();
+
+  return tags.map((tag, index) => {
+    const normalizedTagName = normalizeTaskTagName(tag);
+
+    return {
+      createdAt: new Date(baseTimestamp + index).toISOString(),
+      name: normalizedTagName,
+      nameNormalized: normalizeTaskTagNameForComparison(normalizedTagName),
+      taskId,
+    };
+  });
+}
+
+function validateTaskUpdateInput(input: UpdateTaskRequest): UpdateTaskRequest {
+  const validationResult = updateTaskRequestSchema.safeParse(input);
+
+  if (!validationResult.success) {
+    throw createTaskValidationError(formatZodIssues(validationResult.error));
+  }
+
+  return validationResult.data;
+}
+
 export async function getTasksByListId(listId: string, database?: DbClient) {
   const parentList = await findTodoListById(listId, database);
 
@@ -62,7 +125,20 @@ export async function getTasksByListId(listId: string, database?: DbClient) {
 
   const records = await listTasksByListId(listId, database);
 
-  return records.map(mapTaskRecordToTask);
+  if (!records.length) {
+    return [];
+  }
+
+  const tagsByTaskId = groupTaskTagsByTaskId(
+    await listTaskTagsByTaskIds(
+      records.map((record) => record.id),
+      database,
+    ),
+  );
+
+  return records.map((record) =>
+    mapTaskRecordToTask(record, tagsByTaskId[record.id] ?? []),
+  );
 }
 
 export async function getTaskById(id: string, database?: DbClient) {
@@ -72,7 +148,11 @@ export async function getTaskById(id: string, database?: DbClient) {
     throw createTaskNotFoundError();
   }
 
-  return mapTaskRecordToTask(record);
+  const tagsByTaskId = groupTaskTagsByTaskId(
+    await listTaskTagsByTaskIds([id], database),
+  );
+
+  return mapTaskRecordToTask(record, tagsByTaskId[id] ?? []);
 }
 
 export async function createTaskRecord(
@@ -97,7 +177,7 @@ export async function createTaskRecord(
       database,
     );
 
-    return mapTaskRecordToTask(record);
+    return mapTaskRecordToTask(record, []);
   } catch (error) {
     if (error instanceof AppError) {
       throw error;
@@ -116,27 +196,46 @@ export async function updateTaskRecord(
   input: UpdateTaskRequest,
   database?: DbClient,
 ): Promise<Task> {
-  const existingTask = await findTaskById(id, database);
-
-  if (!existingTask) {
-    throw createTaskNotFoundError();
-  }
+  const validatedInput = validateTaskUpdateInput(input);
+  const client = database ?? getDb();
 
   try {
-    const updatedRecord = await updateTaskById(
-      id,
-      {
-        description: normalizeTaskDescription(input.description),
-        title: input.title.trim(),
-      },
-      database,
-    );
+    const runInTransaction = (transactionDatabase: DbClient) => {
+      const existingTask = findTaskById(id, transactionDatabase);
 
-    if (!updatedRecord) {
-      throw createTaskNotFoundError();
-    }
+      if (!existingTask) {
+        throw createTaskNotFoundError();
+      }
 
-    return mapTaskRecordToTask(updatedRecord);
+      const updatedRecord = updateTaskById(
+        id,
+        {
+          description: normalizeTaskDescription(validatedInput.description),
+          title: validatedInput.title,
+        },
+        transactionDatabase,
+      );
+
+      if (!updatedRecord) {
+        throw createTaskNotFoundError();
+      }
+
+      if (validatedInput.tags) {
+        replaceTaskTags(
+          id,
+          createTaskTagRecords(id, validatedInput.tags),
+          transactionDatabase,
+        );
+      }
+
+      const tagsByTaskId = groupTaskTagsByTaskId(
+        listTaskTagsByTaskIds([id], transactionDatabase),
+      );
+
+      return mapTaskRecordToTask(updatedRecord, tagsByTaskId[id] ?? []);
+    };
+
+    return client.transaction(runInTransaction);
   } catch (error) {
     if (error instanceof AppError) {
       throw error;

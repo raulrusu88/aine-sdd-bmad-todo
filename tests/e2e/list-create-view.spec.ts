@@ -66,6 +66,16 @@ test("creates, renames, deletes, and safely recovers list workspaces", async ({
   await createdTask
     .getByTestId("task-edit-description-input")
     .fill("Share the revised agenda");
+  await createdTask.getByTestId("task-tag-input").fill("urgent");
+  await createdTask.getByTestId("task-tag-add-button").click();
+  await createdTask.getByTestId("task-tag-input").fill("calls");
+  await createdTask.getByTestId("task-tag-input").press("Enter");
+  await expect(createdTask.getByTestId("task-tag-draft-list")).toContainText(
+    "urgent",
+  );
+  await expect(createdTask.getByTestId("task-tag-draft-list")).toContainText(
+    "calls",
+  );
   await createdTask.getByTestId("task-edit-submit").click();
 
   await expect(page.getByTestId("success-notice")).toContainText(
@@ -74,6 +84,10 @@ test("creates, renames, deletes, and safely recovers list workspaces", async ({
   await expect(createdTask.getByTestId("task-edit-form")).toHaveCount(0);
   await expect(createdTask).toContainText("Finalize sprint plan");
   await expect(createdTask).toContainText("Share the revised agenda");
+  await expect(createdTask.getByTestId("task-tag-list")).toContainText(
+    "urgent",
+  );
+  await expect(createdTask.getByTestId("task-tag-list")).toContainText("calls");
 
   await page.getByRole("link", { name: "Workspace" }).click();
 
@@ -88,6 +102,35 @@ test("creates, renames, deletes, and safely recovers list workspaces", async ({
   await expect(page.getByRole("heading", { name: /^Work$/ })).toBeVisible();
 
   await createdTask.getByTestId("task-edit-toggle").click();
+  await createdTask.getByRole("button", { name: "Remove calls tag" }).click();
+  await createdTask.getByTestId("task-tag-input").fill("Calls");
+  await createdTask.getByTestId("task-tag-input").press("Enter");
+  await createdTask.getByTestId("task-edit-submit").click();
+
+  await expect(page.getByTestId("success-notice")).toContainText(
+    'Updated task "Finalize sprint plan".',
+  );
+  await expect(createdTask.getByTestId("task-tag-list")).toContainText(
+    "urgent",
+  );
+  await expect(createdTask.getByTestId("task-tag-list")).toContainText("Calls");
+  await expect(createdTask.getByTestId("task-tag-list")).not.toContainText(
+    "calls",
+  );
+
+  await createdTask.getByTestId("task-edit-toggle").click();
+  await createdTask.getByTestId("task-tag-input").fill("URGENT");
+  await createdTask.getByTestId("task-tag-input").press("Enter");
+  await expect(createdTask.getByTestId("task-edit-error-banner")).toContainText(
+    "Duplicate tags are not allowed.",
+  );
+  await expect(createdTask.getByTestId("task-tag-draft-list")).toContainText(
+    "urgent",
+  );
+  await expect(createdTask.getByTestId("task-tag-draft-list")).toContainText(
+    "Calls",
+  );
+  await createdTask.getByTestId("task-tag-input").fill("");
   await createdTask
     .getByTestId("task-edit-title-input")
     .evaluate((element) => element.removeAttribute("maxlength"));
@@ -99,7 +142,62 @@ test("creates, renames, deletes, and safely recovers list workspaces", async ({
   );
   await expect(createdTask).toContainText("Finalize sprint plan");
   await expect(createdTask).toContainText("Share the revised agenda");
+  await expect(createdTask.getByTestId("task-tag-list")).toContainText(
+    "urgent",
+  );
+  await expect(createdTask.getByTestId("task-tag-list")).toContainText("Calls");
   await createdTask.getByTestId("task-edit-cancel").click();
+
+  let shouldFailTagUpdate = true;
+
+  await page.route("**/api/tasks/*", async (route) => {
+    if (route.request().method() !== "PATCH" || !shouldFailTagUpdate) {
+      await route.continue();
+
+      return;
+    }
+
+    shouldFailTagUpdate = false;
+
+    await route.fulfill({
+      body: JSON.stringify({
+        error: {
+          code: "PERSISTENCE_ERROR",
+          message: "The task could not be updated.",
+        },
+      }),
+      contentType: "application/json",
+      status: 500,
+    });
+  });
+
+  await createdTask.getByTestId("task-edit-toggle").click();
+  await createdTask.getByRole("button", { name: "Remove Calls tag" }).click();
+  await expect(
+    createdTask.getByTestId("task-tag-draft-list"),
+  ).not.toContainText("Calls");
+  await createdTask.getByTestId("task-edit-submit").click();
+
+  await expect(createdTask.getByTestId("task-edit-error-banner")).toContainText(
+    "The task could not be updated.",
+  );
+  await expect(createdTask.getByTestId("task-tag-list")).toContainText(
+    "urgent",
+  );
+  await expect(createdTask.getByTestId("task-tag-list")).toContainText("Calls");
+
+  await createdTask.getByTestId("task-edit-submit").click();
+  await expect(page.getByTestId("success-notice")).toContainText(
+    'Updated task "Finalize sprint plan".',
+  );
+  await expect(createdTask.getByTestId("task-tag-list")).toContainText(
+    "urgent",
+  );
+  await expect(createdTask.getByTestId("task-tag-list")).not.toContainText(
+    "Calls",
+  );
+
+  await page.unroute("**/api/tasks/*");
 
   let shouldFailDelete = true;
 

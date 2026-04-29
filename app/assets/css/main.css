@@ -467,6 +467,64 @@ select:focus-visible,
   white-space: pre-wrap;
 }
 
+.task-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.task-tag-list--editable {
+  margin-top: 0.15rem;
+}
+
+.task-tag {
+  align-items: center;
+  background: #eef4ff;
+  border: 1px solid #b8c9f0;
+  border-radius: 999px;
+  color: #194ea9;
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 700;
+  gap: 0.4rem;
+  line-height: 1.2;
+  padding: 0.35rem 0.7rem;
+}
+
+.task-tag--removable {
+  padding-right: 0.5rem;
+}
+
+.task-tag-input-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.task-tag-input-row .input-control {
+  flex: 1;
+}
+
+.task-tag__remove {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.task-tag__remove[disabled] {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .task-item__panel {
   background: #f8faff;
   border: 1px solid var(--color-border);
@@ -502,6 +560,14 @@ select:focus-visible,
 
   .task-item__header {
     flex-direction: column;
+  }
+
+  .task-tag-input-row {
+    flex-direction: column;
+  }
+
+  .task-tag-input-row .button-secondary {
+    width: 100%;
   }
 }
 

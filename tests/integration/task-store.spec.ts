@@ -11,6 +11,7 @@ function createTask(overrides: Partial<Task> = {}): Task {
     description: "Review acceptance criteria",
     id: "task-1",
     listId: "list-1",
+    tags: [],
     title: "Plan sprint",
     ...overrides,
   };
@@ -161,5 +162,32 @@ describe("useTaskStore", () => {
     expect(store.currentListId).toBeNull();
     expect(store.isCreating).toBe(false);
     expect(store.tasks).toEqual([]);
+  });
+
+  it("applies persisted tag updates to the active task list", async () => {
+    const store = useTaskStore();
+    const task = createTask();
+    const updatedTask = createTask({
+      tags: ["urgent", "calls"],
+      title: "Finalize sprint plan",
+    });
+
+    store.$patch({
+      currentListId: task.listId,
+      tasks: [task],
+    });
+
+    fetchMock.mockResolvedValueOnce(updatedTask);
+
+    await expect(
+      store.updateTask(task.id, {
+        description: task.description ?? undefined,
+        tags: ["urgent", "calls"],
+        title: updatedTask.title,
+      }),
+    ).resolves.toEqual(updatedTask);
+
+    expect(store.tasks).toEqual([updatedTask]);
+    expect(store.updateErrorForTask(task.id)).toBeNull();
   });
 });

@@ -67,12 +67,14 @@ describe("task validation and persistence", () => {
       description: "Review acceptance criteria",
       id: createdTask.id,
       listId: parentList.id,
+      tags: [],
       title: "Plan sprint",
     });
     expect(fetchedTask).toMatchObject({
       description: "Review acceptance criteria",
       id: createdTask.id,
       listId: parentList.id,
+      tags: [],
       title: "Plan sprint",
     });
   });
@@ -100,6 +102,7 @@ describe("task validation and persistence", () => {
     ).resolves.toMatchObject({
       description: null,
       listId: parentList.id,
+      tags: [],
       title: "Call vendor",
     });
   });
@@ -128,6 +131,7 @@ describe("task validation and persistence", () => {
         createdTask.id,
         {
           description: "   ",
+          tags: ["urgent", "Calls"],
           title: "Finalize sprint plan",
         },
         testDatabase.db,
@@ -135,6 +139,33 @@ describe("task validation and persistence", () => {
     ).resolves.toMatchObject({
       description: null,
       id: createdTask.id,
+      tags: ["urgent", "Calls"],
+      title: "Finalize sprint plan",
+    });
+
+    await expect(
+      updateTaskRecord(
+        createdTask.id,
+        {
+          description: "   ",
+          tags: ["Calls"],
+          title: "Finalize sprint plan",
+        },
+        testDatabase.db,
+      ),
+    ).resolves.toMatchObject({
+      description: null,
+      id: createdTask.id,
+      tags: ["Calls"],
+      title: "Finalize sprint plan",
+    });
+
+    await expect(
+      getTaskById(createdTask.id, testDatabase.db),
+    ).resolves.toMatchObject({
+      description: null,
+      id: createdTask.id,
+      tags: ["Calls"],
       title: "Finalize sprint plan",
     });
 
@@ -149,6 +180,50 @@ describe("task validation and persistence", () => {
     ).rejects.toMatchObject({
       code: "NOT_FOUND",
       statusCode: 404,
+    });
+  });
+
+  it("rejects invalid task tag updates before persistence", async () => {
+    const testDatabase = createListTestDatabase();
+    cleanup = testDatabase.cleanup;
+
+    const parentList = await createTodoListRecord(
+      {
+        name: "Work",
+      },
+      testDatabase.db,
+    );
+    const createdTask = await createTaskRecord(
+      {
+        listId: parentList.id,
+        title: "Plan sprint",
+      },
+      testDatabase.db,
+    );
+
+    await expect(
+      updateTaskRecord(
+        createdTask.id,
+        {
+          tags: ["urgent", "Urgent"],
+          title: "Plan sprint",
+        },
+        testDatabase.db,
+      ),
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      details: {
+        "tags.1": ["Duplicate tags are not allowed."],
+      },
+      statusCode: 400,
+    });
+
+    await expect(
+      getTaskById(createdTask.id, testDatabase.db),
+    ).resolves.toMatchObject({
+      id: createdTask.id,
+      tags: [],
+      title: "Plan sprint",
     });
   });
 
@@ -253,6 +328,7 @@ describe("task API", () => {
       description: "Review acceptance criteria",
       id: expect.any(String),
       listId: parentList.id,
+      tags: [],
       title: "Plan sprint",
     });
     expect(createdTask.createdAt).toMatch(
@@ -358,6 +434,7 @@ describe("task API", () => {
       {
         body: JSON.stringify({
           description: "Share the revised agenda",
+          tags: ["urgent", "calls"],
           title: "Finalize sprint plan",
         }),
         headers: {
@@ -372,6 +449,26 @@ describe("task API", () => {
     );
     const collectionBody =
       (await collectionResponse.json()) as TaskCollectionResponse;
+    const reducedTagResponse = await fetch(
+      `${context.url}/api/tasks/${createdTask.id}`,
+      {
+        body: JSON.stringify({
+          description: "Share the revised agenda",
+          tags: ["urgent"],
+          title: "Finalize sprint plan",
+        }),
+        headers: {
+          "content-type": "application/json",
+        },
+        method: "PATCH",
+      },
+    );
+    const reducedTagTask = (await reducedTagResponse.json()) as Task;
+    const reducedCollectionResponse = await fetch(
+      `${context.url}/api/tasks?listId=${parentList.id}`,
+    );
+    const reducedCollectionBody =
+      (await reducedCollectionResponse.json()) as TaskCollectionResponse;
 
     const deleteResponse = await fetch(
       `${context.url}/api/tasks/${createdTask.id}`,
@@ -391,10 +488,21 @@ describe("task API", () => {
       description: "Share the revised agenda",
       id: createdTask.id,
       listId: parentList.id,
+      tags: ["urgent", "calls"],
       title: "Finalize sprint plan",
     });
     expect(collectionResponse.status).toBe(200);
     expect(collectionBody.items).toEqual([updatedTask]);
+    expect(reducedTagResponse.status).toBe(200);
+    expect(reducedTagTask).toMatchObject({
+      description: "Share the revised agenda",
+      id: createdTask.id,
+      listId: parentList.id,
+      tags: ["urgent"],
+      title: "Finalize sprint plan",
+    });
+    expect(reducedCollectionResponse.status).toBe(200);
+    expect(reducedCollectionBody.items).toEqual([reducedTagTask]);
     expect(deleteResponse.status).toBe(200);
     expect(deleteBody).toEqual({
       id: createdTask.id,
@@ -519,6 +627,7 @@ describe("task API", () => {
       `${context.url}/api/tasks/task-1`,
       {
         body: JSON.stringify({
+          tags: ["urgent", "Urgent"],
           title: "   ",
         }),
         headers: {
@@ -572,6 +681,7 @@ describe("task API", () => {
       error: {
         code: "VALIDATION_ERROR",
         details: {
+          "tags.1": ["Duplicate tags are not allowed."],
           title: ["Task title is required"],
         },
         message: "Please enter valid task details.",

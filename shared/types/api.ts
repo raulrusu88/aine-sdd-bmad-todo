@@ -38,11 +38,14 @@ export interface DeleteTodoListResponse {
   id: string;
 }
 
+export type TaskTag = string;
+
 export interface Task {
   createdAt: string;
   description: string | null;
   id: string;
   listId: string;
+  tags: TaskTag[];
   title: string;
 }
 
@@ -54,6 +57,7 @@ export interface CreateTaskRequest {
 
 export interface UpdateTaskRequest {
   description?: string;
+  tags?: TaskTag[];
   title: string;
 }
 

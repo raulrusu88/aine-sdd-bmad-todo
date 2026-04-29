@@ -11,12 +11,15 @@ const props = defineProps<{
 const route = useRoute();
 const taskStore = useTaskStore();
 const uiFeedbackStore = useUiFeedbackStore();
+const tagInput = ref<HTMLInputElement | null>(null);
 const titleInput = ref<HTMLInputElement | null>(null);
 
 const isDeletePanelOpen = ref(false);
 const isEditPanelOpen = ref(false);
 const localUpdateError = ref<string | null>(null);
 const taskDescriptionDraft = ref("");
+const taskTagInputDraft = ref("");
+const taskTagsDraft = ref<string[]>([]);
 const taskTitleDraft = ref("");
 
 const deleteError = computed(() => taskStore.deleteErrorForTask(props.task.id));
@@ -31,6 +34,80 @@ const updateError = computed(
 function syncDraftValues() {
   taskTitleDraft.value = props.task.title;
   taskDescriptionDraft.value = props.task.description ?? "";
+  taskTagInputDraft.value = "";
+  taskTagsDraft.value = [...props.task.tags];
+}
+
+function normalizeDraftTagName(value: string) {
+  return value.trim().normalize("NFC");
+}
+
+function normalizeDraftTagNameForComparison(value: string) {
+  return normalizeDraftTagName(value).toLocaleLowerCase();
+}
+
+function areTaskTagsEqual(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every(
+      (tag, index) =>
+        normalizeDraftTagName(tag) ===
+        normalizeDraftTagName(right[index] ?? ""),
+    )
+  );
+}
+
+async function focusTagInput() {
+  await nextTick();
+  tagInput.value?.focus();
+}
+
+async function addTaskTagFromDraft() {
+  const normalizedTagName = normalizeDraftTagName(taskTagInputDraft.value);
+
+  localUpdateError.value = null;
+  taskStore.clearUpdateError(props.task.id);
+
+  if (!normalizedTagName) {
+    localUpdateError.value = "Tag is required.";
+    await focusTagInput();
+
+    return false;
+  }
+
+  if (normalizedTagName.length > 40) {
+    localUpdateError.value = "Tag must be 40 characters or fewer.";
+    await focusTagInput();
+
+    return false;
+  }
+
+  if (
+    taskTagsDraft.value.some(
+      (tag) =>
+        normalizeDraftTagNameForComparison(tag) ===
+        normalizeDraftTagNameForComparison(normalizedTagName),
+    )
+  ) {
+    localUpdateError.value = "Duplicate tags are not allowed.";
+    await focusTagInput();
+
+    return false;
+  }
+
+  taskTagsDraft.value = [...taskTagsDraft.value, normalizedTagName];
+  taskTagInputDraft.value = "";
+  await focusTagInput();
+
+  return true;
+}
+
+function removeTaskTag(index: number) {
+  localUpdateError.value = null;
+  taskStore.clearUpdateError(props.task.id);
+  taskTagsDraft.value = taskTagsDraft.value.filter(
+    (_, draftIndex) => draftIndex !== index,
+  );
 }
 
 function clearMutationErrors() {
@@ -87,9 +164,18 @@ async function handleUpdateTask() {
     return;
   }
 
+  if (taskTagInputDraft.value.trim()) {
+    const didAddTaskTag = await addTaskTagFromDraft();
+
+    if (!didAddTaskTag) {
+      return;
+    }
+  }
+
   if (
     title === props.task.title &&
-    normalizeDraftDescription() === normalizedTaskDescription.value
+    normalizeDraftDescription() === normalizedTaskDescription.value &&
+    areTaskTagsEqual(taskTagsDraft.value, props.task.tags)
   ) {
     closeEditPanel();
 
@@ -98,6 +184,7 @@ async function handleUpdateTask() {
 
   const updatedTask = await taskStore.updateTask(props.task.id, {
     description: taskDescriptionDraft.value,
+    tags: taskTagsDraft.value,
     title,
   });
 
@@ -128,7 +215,11 @@ async function handleDeleteTask() {
 }
 
 watch(
-  () => [props.task.description, props.task.title],
+  () => [
+    props.task.description,
+    props.task.title,
+    props.task.tags.join("\u0000"),
+  ],
   () => {
     if (!isEditPanelOpen.value) {
       syncDraftValues();
@@ -153,6 +244,17 @@ watch(
         >
           {{ task.description }}
         </p>
+
+        <ul
+          v-if="task.tags.length"
+          class="task-tag-list"
+          data-testid="task-tag-list"
+          aria-label="Task tags"
+        >
+          <li v-for="(tag, index) in task.tags" :key="`${tag}-${index}`">
+            <span class="task-tag" data-testid="task-tag-chip">{{ tag }}</span>
+          </li>
+        </ul>
       </div>
 
       <TasksTaskMetadataBadge :created-at="task.createdAt" />
@@ -214,6 +316,64 @@ watch(
           maxlength="2000"
           name="description"
         />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" :for="`task-edit-tag-${task.id}`"
+          >Tags</label
+        >
+        <p class="field-help">
+          Add short labels one at a time to keep the task easy to scan.
+        </p>
+
+        <div class="task-tag-input-row">
+          <input
+            :id="`task-edit-tag-${task.id}`"
+            ref="tagInput"
+            v-model="taskTagInputDraft"
+            class="input-control"
+            data-testid="task-tag-input"
+            :disabled="isUpdating"
+            maxlength="40"
+            name="tag"
+            placeholder="Add a tag"
+            type="text"
+            @keydown.enter.prevent="addTaskTagFromDraft"
+          />
+
+          <button
+            class="button-secondary"
+            data-testid="task-tag-add-button"
+            :disabled="isUpdating"
+            type="button"
+            @click="addTaskTagFromDraft"
+          >
+            Add tag
+          </button>
+        </div>
+
+        <ul
+          v-if="taskTagsDraft.length"
+          class="task-tag-list task-tag-list--editable"
+          data-testid="task-tag-draft-list"
+          aria-label="Draft task tags"
+        >
+          <li v-for="(tag, index) in taskTagsDraft" :key="`${tag}-${index}`">
+            <span class="task-tag task-tag--removable">
+              <span data-testid="task-tag-draft-chip">{{ tag }}</span>
+              <button
+                class="task-tag__remove"
+                :aria-label="`Remove ${tag} tag`"
+                data-testid="task-tag-remove"
+                :disabled="isUpdating"
+                type="button"
+                @click="removeTaskTag(index)"
+              >
+                Remove
+              </button>
+            </span>
+          </li>
+        </ul>
       </div>
 
       <p
