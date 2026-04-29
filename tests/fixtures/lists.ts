@@ -23,6 +23,7 @@ import deleteTodoListHandler from "~~/server/api/lists/[id].delete";
 import getTodoListByIdHandler from "~~/server/api/lists/[id].get";
 import updateTodoListHandler from "~~/server/api/lists/[id].patch";
 import deleteTaskHandler from "~~/server/api/tasks/[id].delete";
+import completeTaskHandler from "~~/server/api/tasks/[id]/complete.post";
 import getTodoListsHandler from "~~/server/api/lists/index.get";
 import createTodoListHandler from "~~/server/api/lists/index.post";
 import getTaskByIdHandler from "~~/server/api/tasks/[id].get";
@@ -88,6 +89,7 @@ export async function createListApiTestContext() {
     .delete("/lists/:id", deleteTodoListHandler)
     .get("/tasks", getTasksHandler)
     .post("/tasks", createTaskHandler)
+    .post("/tasks/:id/complete", completeTaskHandler)
     .get("/tasks/:id", getTaskByIdHandler)
     .patch("/tasks/:id", updateTaskHandler)
     .delete("/tasks/:id", deleteTaskHandler);

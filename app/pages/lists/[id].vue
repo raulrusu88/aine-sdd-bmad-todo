@@ -35,6 +35,9 @@ const shouldShowTaskFilterBar = computed(
     taskStore.hasActiveTagFilter ||
     Boolean(taskStore.loadError),
 );
+const hasCompletedTasksInView = computed(
+  () => taskStore.completedTasks.length > 0,
+);
 const taskCreateErrorMessage = computed(
   () => localTaskError.value ?? taskStore.createError,
 );
@@ -46,11 +49,17 @@ const taskComposerHelpMessage = computed(() =>
 const isTaskComposerDisabled = computed(
   () => !isInteractive.value || taskStore.hasActiveTagFilter,
 );
-const taskListEmptyMessage = computed(() =>
-  taskStore.activeTagFilter
-    ? `No tasks match the "${taskStore.activeTagFilter}" tag yet. Clear the filter or choose another tag.`
-    : "No tasks yet. Add the first task for this list to get started.",
-);
+const taskListEmptyMessage = computed(() => {
+  if (taskStore.activeTagFilter) {
+    return hasCompletedTasksInView.value
+      ? `No active tasks match the "${taskStore.activeTagFilter}" tag. Completed matches stay below for reference.`
+      : `No tasks match the "${taskStore.activeTagFilter}" tag yet. Clear the filter or choose another tag.`;
+  }
+
+  return hasCompletedTasksInView.value
+    ? "No active tasks right now. Completed work stays below for reference."
+    : "No tasks yet. Add the first task for this list to get started.";
+});
 const taskListEmptyTestId = computed(() =>
   taskStore.activeTagFilter
     ? "task-list-filter-empty-state"
@@ -109,6 +118,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   createTaskRequestId += 1;
+  restoreWorkspaceRequestId += 1;
+  taskStore.resetTasks();
 });
 
 function resetTaskDrafts() {
@@ -423,8 +434,24 @@ async function handleDeleteList() {
           :empty-message="taskListEmptyMessage"
           :empty-test-id="taskListEmptyTestId"
           :is-loading="taskStore.isLoading"
+          list-aria-label="Active tasks in this list"
           :load-error="taskStore.loadError"
-          :tasks="taskStore.tasks"
+          panel-test-id="active-task-list"
+          :tasks="taskStore.activeTasks"
+          title-id="active-task-list-title"
+        />
+
+        <TasksTaskList
+          v-if="hasCompletedTasksInView"
+          empty-message="Completed tasks will appear here after you mark them done."
+          empty-test-id="completed-task-list-empty-state"
+          kicker="Tracked progress"
+          list-aria-label="Completed tasks in this list"
+          panel-test-id="completed-task-list"
+          :tasks="taskStore.completedTasks"
+          title="Completed tasks"
+          title-id="completed-task-list-title"
+          tone="completed"
         />
       </div>
 

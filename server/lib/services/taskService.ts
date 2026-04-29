@@ -10,6 +10,7 @@ import { getDb } from "~~/db/client";
 
 import type { DbClient } from "~~/db/client";
 import type { NewTaskTagRecord, TaskTagRecord } from "~~/db/schema/taskTags";
+import type { TaskRecord } from "~~/db/schema/tasks";
 
 import {
   updateTaskRequestSchema,
@@ -26,6 +27,7 @@ import {
   findTaskById,
   listTasksByListId,
   listTaskTagsByTaskIds,
+  markTaskCompletedById,
   replaceTaskTags,
   updateTaskById,
 } from "../repositories/taskRepository";
@@ -106,6 +108,14 @@ function createTaskTagRecords(
   });
 }
 
+function mapTaskRecordWithTags(record: TaskRecord, database: DbClient): Task {
+  const tagsByTaskId = groupTaskTagsByTaskId(
+    listTaskTagsByTaskIds([record.id], database),
+  );
+
+  return mapTaskRecordToTask(record, tagsByTaskId[record.id] ?? []);
+}
+
 function validateTaskUpdateInput(input: UpdateTaskRequest): UpdateTaskRequest {
   const validationResult = updateTaskRequestSchema.safeParse(input);
 
@@ -164,17 +174,14 @@ export async function getTasksByListIdAndTag(
 }
 
 export async function getTaskById(id: string, database?: DbClient) {
-  const record = await findTaskById(id, database);
+  const client = database ?? getDb();
+  const record = await findTaskById(id, client);
 
   if (!record) {
     throw createTaskNotFoundError();
   }
 
-  const tagsByTaskId = groupTaskTagsByTaskId(
-    await listTaskTagsByTaskIds([id], database),
-  );
-
-  return mapTaskRecordToTask(record, tagsByTaskId[id] ?? []);
+  return mapTaskRecordWithTags(record, client);
 }
 
 export async function createTaskRecord(
@@ -190,6 +197,7 @@ export async function createTaskRecord(
   try {
     const record = await createTask(
       {
+        completedAt: null,
         createdAt: new Date().toISOString(),
         description: normalizeTaskDescription(input.description),
         id: crypto.randomUUID(),
@@ -250,11 +258,7 @@ export async function updateTaskRecord(
         );
       }
 
-      const tagsByTaskId = groupTaskTagsByTaskId(
-        listTaskTagsByTaskIds([id], transactionDatabase),
-      );
-
-      return mapTaskRecordToTask(updatedRecord, tagsByTaskId[id] ?? []);
+      return mapTaskRecordWithTags(updatedRecord, transactionDatabase);
     };
 
     return client.transaction(runInTransaction);
@@ -264,6 +268,47 @@ export async function updateTaskRecord(
     }
 
     throw createTaskPersistenceError("The task could not be updated.");
+  }
+}
+
+export async function completeTaskRecord(
+  id: string,
+  database?: DbClient,
+): Promise<Task> {
+  const client = database ?? getDb();
+
+  try {
+    const runInTransaction = (transactionDatabase: DbClient) => {
+      const existingTask = findTaskById(id, transactionDatabase);
+
+      if (!existingTask) {
+        throw createTaskNotFoundError();
+      }
+
+      if (existingTask.completedAt) {
+        return mapTaskRecordWithTags(existingTask, transactionDatabase);
+      }
+
+      const completedRecord = markTaskCompletedById(
+        id,
+        new Date().toISOString(),
+        transactionDatabase,
+      );
+
+      if (!completedRecord) {
+        throw createTaskNotFoundError();
+      }
+
+      return mapTaskRecordWithTags(completedRecord, transactionDatabase);
+    };
+
+    return client.transaction(runInTransaction);
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+
+    throw createTaskPersistenceError("The task could not be completed.");
   }
 }
 

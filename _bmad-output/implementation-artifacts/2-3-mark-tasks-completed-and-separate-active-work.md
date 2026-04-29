@@ -1,6 +1,6 @@
 # Story 2.3: Mark Tasks Completed and Separate Active Work
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -19,22 +19,27 @@ so that I can track progress without losing clarity about what still needs atten
 
 ## Tasks / Subtasks
 
-- [ ] Extend shared task-status contracts and persistence support for completion (AC: 1, 2, 3)
-  - [ ] Add additive completion fields to the shared task contract and validation layer so tasks can communicate durable completion state without breaking current tag/filter consumers.
-  - [ ] Extend task persistence with the minimum schema support needed for completion, aligning with the architecture guidance around `completed_at` rather than introducing a separate archive model.
-  - [ ] Keep the distinction between active, completed, deleted, and missing tasks explicit so later history stories inherit stable semantics.
-- [ ] Add developer-accessible completion operations and retrieval semantics (AC: 1, 3, 4)
-  - [ ] Introduce a dedicated completion operation under the current API boundaries, aligned with the architecture guidance for `/api/tasks/[id]/complete` or an equally minimal route surface.
-  - [ ] Extend task retrieval only as far as needed to separate active and completed work in the current workspace without pulling the dedicated history experience forward from later stories.
-  - [ ] Preserve structured validation/error responses and last confirmed task state when completion requests fail.
-- [ ] Add completion controls and active/completed separation in the list workspace (AC: 1, 2, 4)
-  - [ ] Add a keyboard-accessible completion control and stable hooks such as `task-complete-toggle` so task state changes are explicit and testable.
-  - [ ] Keep active tasks visually prominent while completed tasks are clearly separated and status is communicated consistently in the current workspace.
-  - [ ] Ensure completion transitions interact safely with current tag filtering, success feedback, and task mutation state without creating misleading empty/error states.
-- [ ] Add verification coverage for completion and active-work separation (AC: 1, 2, 3, 4)
-  - [ ] Add store/unit coverage for completion transitions, active/completed separation, and stale response safety.
-  - [ ] Add API/integration coverage for completion persistence, retrieval semantics, and failure-safe responses.
-  - [ ] Extend the serialized browser journey for marking tasks completed, verifying active-work separation, keyboard accessibility, and retry-safe failure handling.
+- [x] Extend shared task-status contracts and persistence support for completion (AC: 1, 2, 3)
+  - [x] Add additive completion fields to the shared task contract and validation layer so tasks can communicate durable completion state without breaking current tag/filter consumers.
+  - [x] Extend task persistence with the minimum schema support needed for completion, aligning with the architecture guidance around `completed_at` rather than introducing a separate archive model.
+  - [x] Keep the distinction between active, completed, deleted, and missing tasks explicit so later history stories inherit stable semantics.
+- [x] Add developer-accessible completion operations and retrieval semantics (AC: 1, 3, 4)
+  - [x] Introduce a dedicated completion operation under the current API boundaries, aligned with the architecture guidance for `/api/tasks/[id]/complete` or an equally minimal route surface.
+  - [x] Extend task retrieval only as far as needed to separate active and completed work in the current workspace without pulling the dedicated history experience forward from later stories.
+  - [x] Preserve structured validation/error responses and last confirmed task state when completion requests fail.
+- [x] Add completion controls and active/completed separation in the list workspace (AC: 1, 2, 4)
+  - [x] Add a keyboard-accessible completion control and stable hooks such as `task-complete-toggle` so task state changes are explicit and testable.
+  - [x] Keep active tasks visually prominent while completed tasks are clearly separated and status is communicated consistently in the current workspace.
+  - [x] Ensure completion transitions interact safely with current tag filtering, success feedback, and task mutation state without creating misleading empty/error states.
+- [x] Add verification coverage for completion and active-work separation (AC: 1, 2, 3, 4)
+  - [x] Add store/unit coverage for completion transitions, active/completed separation, and stale response safety.
+  - [x] Add API/integration coverage for completion persistence, retrieval semantics, and failure-safe responses.
+  - [x] Extend the serialized browser journey for marking tasks completed, verifying active-work separation, keyboard accessibility, and retry-safe failure handling.
+
+### Review Findings
+
+- [x] [Review][Patch] Suppress late completion success feedback after leaving the list workspace by resetting task state on workspace unmount and only showing completion success when the route still matches the request path.
+- [x] [Review][Patch] Clear stale completion failure banners when opening the delete flow so the delete confirmation shows only relevant error state.
 
 ## Dev Notes
 
@@ -205,11 +210,48 @@ GPT-5.4
 - Story 2.3 was selected from `sprint-status.yaml` after Story 2.2 reached `done`.
 - Planning context was pulled from the Epic 2 story definition, task status/history architecture guidance, PRD completion requirements, and QA/handoff references for completion and recovery behavior.
 - Current runtime baseline was reloaded from the accepted Story 2.2 artifact plus the current task types, task routes, task repository/service flows, task store, and workspace UI before packaging this story.
+- Validation completed with `npm run db:generate`, `npm run test:unit`, `npm run test:e2e -- tests/e2e/list-create-view.spec.ts --project=chromium`, and `npm run build`.
+- Review-fix validation re-ran with `npm run test:unit`, `npm run test:e2e -- tests/e2e/list-create-view.spec.ts --project=chromium`, and `npm run build` after patching the completion route-scope and stale-error findings.
+- Acceptance review found no actionable defects after the post-fix review pass; Story 2.3 was approved for closeout with only optional follow-up coverage gaps noted.
 
 ### Completion Notes List
 
-- Pending implementation.
+- Added durable completion state to the shared task contract and persistence layer with `completedAt`, `isCompleted`, a generated Drizzle migration, and repository/service mapping support based on `completed_at`.
+- Added `POST /api/tasks/[id]/complete` plus isolated API-harness wiring so developers can mark tasks completed through a dedicated route without changing the existing task-update surface.
+- Extended `useTaskStore` with scoped completion mutations, `completeErrors`, `isCompletingById`, and derived `activeTasks` / `completedTasks` collections while preserving Story 2.2 list-boundary and filter-recovery behavior.
+- Updated the list workspace UI to separate active and completed work, show stable task status badges and completion metadata, and keep completion failures actionable without misrepresenting the last confirmed task state.
+- Extended store, API, SSR-render, and Chromium browser coverage for completion persistence, active/completed separation, keyboard-accessible completion controls, and retry-safe completion failures.
+- Review hardening now resets task state when the list workspace unmounts, suppresses late completion success notices after route changes, and clears stale completion errors when the delete flow opens.
+- Acceptance pass confirmed the story is ready to close with no blocking findings; remaining follow-up items are limited to optional extra coverage for filtered completion and idempotent completion paths.
 
 ### File List
 
-- Pending implementation.
+- \_bmad-output/implementation-artifacts/2-3-mark-tasks-completed-and-separate-active-work.md
+- \_bmad-output/implementation-artifacts/sprint-status.yaml
+- app/assets/css/main.css
+- app/components/tasks/TaskItem.vue
+- app/components/tasks/TaskList.vue
+- app/components/tasks/TaskMetadataBadge.vue
+- app/pages/lists/[id].vue
+- app/stores/useTaskStore.ts
+- db/migrations/0003_chunky_ironclad.sql
+- db/migrations/meta/0003_snapshot.json
+- db/migrations/meta/\_journal.json
+- db/schema/tasks.ts
+- shared/schemas/index.ts
+- shared/types/api.ts
+- server/api/tasks/[id]/complete.post.ts
+- server/lib/mappers/taskMapper.ts
+- server/lib/repositories/taskRepository.ts
+- server/lib/services/taskService.ts
+- tests/e2e/list-create-view.spec.ts
+- tests/fixtures/lists.ts
+- tests/integration/api/tasks.spec.ts
+- tests/integration/feedback-state-components.spec.ts
+- tests/integration/task-store.spec.ts
+
+## Change Log
+
+- 2026-04-29: Implemented durable task completion across the shared contract, Drizzle schema/migration, completion API route, Pinia store, list workspace UI, and focused validation coverage; Story 2.3 moved to `review`.
+- 2026-04-29: Applied review fixes for delayed completion route-scope leakage and stale completion error banners, then revalidated with full unit, focused Chromium E2E, and production build coverage.
+- 2026-04-29: Acceptance pass completed with no actionable findings; Story 2.3 marked `done` after the post-fix review confirmed the completion slice was ready to close.

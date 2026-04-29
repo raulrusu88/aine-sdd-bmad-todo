@@ -56,9 +56,11 @@ export const todoListSchema = z.object({
 });
 
 export const taskSchema = z.object({
+  completedAt: isoTimestampSchema.nullable(),
   createdAt: isoTimestampSchema,
   description: taskDescriptionSchema.nullable(),
   id: taskIdSchema,
+  isCompleted: z.boolean(),
   listId: todoListIdSchema,
   tags: taskTagCollectionSchema,
   title: taskTitleSchema,

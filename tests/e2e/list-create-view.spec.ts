@@ -190,14 +190,120 @@ test("creates, renames, deletes, and safely recovers list workspaces", async ({
 
   await page.unroute("**/api/tasks*");
 
-  await secondTask.getByTestId("task-delete-toggle").click();
-  await expect(secondTask.getByTestId("task-delete-panel")).toBeVisible();
-  await secondTask.getByTestId("task-delete-confirm").click();
+  let shouldDelayCompletion = true;
+
+  await page.route("**/api/tasks/*/complete", async (route) => {
+    if (route.request().method() !== "POST" || !shouldDelayCompletion) {
+      await route.continue();
+
+      return;
+    }
+
+    shouldDelayCompletion = false;
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.continue();
+  });
+
+  const delayedCompleteResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      /\/api\/tasks\/[^/]+\/complete$/.test(new URL(response.url()).pathname),
+  );
+
+  await secondTask.getByTestId("task-complete-toggle").click();
+  await page.getByRole("link", { name: "Workspace" }).click();
+
+  await expect(page).toHaveURL("/");
+
+  await delayedCompleteResponse;
+
+  await expect(page.getByTestId("success-notice")).toHaveCount(0);
+
+  await page.unroute("**/api/tasks/*/complete");
+
+  await page.getByTestId("list-nav-item").filter({ hasText: "Work" }).click();
+
+  await expect(page.getByRole("heading", { name: /^Work$/ })).toBeVisible();
+  await expect(page.getByTestId("active-task-list")).not.toContainText(
+    "Buy groceries",
+  );
+  await expect(page.getByTestId("completed-task-list")).toContainText(
+    "Buy groceries",
+  );
+
+  await page.getByTestId("task-title-input").fill("Pay vendor");
+  await page.getByTestId("task-create-button").click();
+  await expect(page.getByTestId("success-notice")).toContainText(
+    'Created task "Pay vendor".',
+  );
+
+  const completionCandidate = page.getByTestId("task-item").filter({
+    hasText: "Pay vendor",
+  });
+
+  let shouldFailCompletion = true;
+
+  await page.route("**/api/tasks/*/complete", async (route) => {
+    if (route.request().method() !== "POST" || !shouldFailCompletion) {
+      await route.continue();
+
+      return;
+    }
+
+    shouldFailCompletion = false;
+
+    await route.fulfill({
+      body: JSON.stringify({
+        error: {
+          code: "PERSISTENCE_ERROR",
+          message: "The task could not be completed. Try again.",
+        },
+      }),
+      contentType: "application/json",
+      status: 500,
+    });
+  });
+
+  await completionCandidate.getByTestId("task-complete-toggle").click();
+
+  await expect(
+    completionCandidate.getByTestId("task-complete-error-banner"),
+  ).toContainText("The task could not be completed. Try again.");
+  await expect(page.getByTestId("active-task-list")).toContainText(
+    "Pay vendor",
+  );
+  await completionCandidate.getByTestId("task-delete-toggle").click();
+  await expect(
+    completionCandidate.getByTestId("task-complete-error-banner"),
+  ).toHaveCount(0);
+  await expect(
+    completionCandidate.getByTestId("task-delete-panel"),
+  ).toBeVisible();
+  await completionCandidate.getByTestId("task-delete-cancel").click();
+  await expect(
+    completionCandidate.getByTestId("task-delete-panel"),
+  ).toHaveCount(0);
+
+  await completionCandidate.getByTestId("task-complete-toggle").click();
 
   await expect(page.getByTestId("success-notice")).toContainText(
-    'Deleted task "Buy groceries".',
+    'Completed task "Pay vendor".',
   );
-  await expect(secondTask).toHaveCount(0);
+  await expect(page.getByTestId("active-task-list")).not.toContainText(
+    "Pay vendor",
+  );
+  await expect(page.getByTestId("completed-task-list")).toContainText(
+    "Pay vendor",
+  );
+  await expect(
+    completionCandidate.getByTestId("task-status-badge"),
+  ).toContainText("Completed");
+  await expect(
+    completionCandidate.getByTestId("task-completion-metadata"),
+  ).toContainText("Completed");
+
+  await page.unroute("**/api/tasks/*/complete");
 
   await createdTask.getByTestId("task-edit-toggle").click();
   await createdTask.getByRole("button", { name: "Remove calls tag" }).click();
@@ -333,7 +439,9 @@ test("creates, renames, deletes, and safely recovers list workspaces", async ({
   await expect(page.getByTestId("success-notice")).toContainText(
     'Deleted task "Finalize sprint plan".',
   );
-  await expect(createdTask).toHaveCount(0);
+  await expect(page.getByTestId("active-task-list")).not.toContainText(
+    "Finalize sprint plan",
+  );
   await expect(page.getByTestId("task-list-empty-state")).toBeVisible();
 
   await page.getByRole("link", { name: "Workspace" }).click();

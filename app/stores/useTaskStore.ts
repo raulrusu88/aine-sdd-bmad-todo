@@ -146,9 +146,11 @@ export const useTaskStore = defineStore("tasks", {
   state: () => ({
     activeTagFilter: null as string | null,
     allTasks: [] as Task[],
+    completeErrors: {} as Record<string, string>,
     createError: null as string | null,
     currentListId: null as string | null,
     deleteErrors: {} as Record<string, string>,
+    isCompletingById: {} as Record<string, boolean>,
     isCreating: false,
     isDeletingById: {} as Record<string, boolean>,
     isLoading: false,
@@ -159,8 +161,17 @@ export const useTaskStore = defineStore("tasks", {
     updateErrors: {} as Record<string, string>,
   }),
   getters: {
+    activeTasks(state) {
+      return state.tasks.filter((task) => !task.isCompleted);
+    },
     availableTaskTags(state) {
       return collectAvailableTaskTags(state.allTasks);
+    },
+    completeErrorForTask(state) {
+      return (id: string) => state.completeErrors[id] ?? null;
+    },
+    completedTasks(state) {
+      return state.tasks.filter((task) => task.isCompleted);
     },
     deleteErrorForTask(state) {
       return (id: string) => state.deleteErrors[id] ?? null;
@@ -174,6 +185,9 @@ export const useTaskStore = defineStore("tasks", {
     isDeletingTask(state) {
       return (id: string) => state.isDeletingById[id] ?? false;
     },
+    isCompletingTask(state) {
+      return (id: string) => state.isCompletingById[id] ?? false;
+    },
     isUpdatingTask(state) {
       return (id: string) => state.isUpdatingById[id] ?? false;
     },
@@ -182,6 +196,15 @@ export const useTaskStore = defineStore("tasks", {
     },
   },
   actions: {
+    clearCompleteError(taskId?: string) {
+      if (!taskId) {
+        this.completeErrors = {};
+
+        return;
+      }
+
+      this.completeErrors = omitRecordEntry(this.completeErrors, taskId);
+    },
     clearCreateError() {
       this.createError = null;
     },
@@ -215,13 +238,16 @@ export const useTaskStore = defineStore("tasks", {
     },
     resetTasks(listId: string | null = null) {
       this.loadRequestId += 1;
+      this.clearCompleteError();
       this.clearCreateError();
       this.clearDeleteError();
       this.clearLoadError();
       this.clearUpdateError();
       this.activeTagFilter = null;
       this.allTasks = [];
+      this.completeErrors = {};
       this.currentListId = listId;
+      this.isCompletingById = {};
       this.isDeletingById = {};
       this.isLoading = false;
       this.isUpdatingById = {};
@@ -392,6 +418,7 @@ export const useTaskStore = defineStore("tasks", {
     async deleteTask(id: string) {
       const mutationListId = this.currentListId;
 
+      this.clearCompleteError(id);
       this.clearDeleteError(id);
       this.isDeletingById = {
         ...this.isDeletingById,
@@ -436,9 +463,60 @@ export const useTaskStore = defineStore("tasks", {
         this.isDeletingById = omitRecordEntry(this.isDeletingById, id);
       }
     },
+    async completeTask(id: string) {
+      const mutationListId = this.currentListId;
+
+      this.clearCompleteError(id);
+      this.isCompletingById = {
+        ...this.isCompletingById,
+        [id]: true,
+      };
+
+      try {
+        const completedTask = await $fetch<Task>(`/api/tasks/${id}/complete`, {
+          method: "POST",
+        });
+
+        if (
+          shouldApplyTaskMutation(this.currentListId, mutationListId) &&
+          mutationListId === completedTask.listId
+        ) {
+          this.allTasks = upsertTask(this.allTasks, completedTask);
+          this.tasks = filterTasksByTag(this.allTasks, this.activeTagFilter);
+        }
+
+        return completedTask;
+      } catch (error) {
+        const apiError = extractApiErrorInfo(
+          error,
+          "The task could not be completed. Try again.",
+        );
+
+        if (!shouldApplyTaskMutation(this.currentListId, mutationListId)) {
+          return null;
+        }
+
+        if (apiError.statusCode === 404) {
+          this.allTasks = removeTask(this.allTasks, id);
+          this.tasks = removeTask(this.tasks, id);
+
+          return null;
+        }
+
+        this.completeErrors = {
+          ...this.completeErrors,
+          [id]: apiError.message,
+        };
+
+        return null;
+      } finally {
+        this.isCompletingById = omitRecordEntry(this.isCompletingById, id);
+      }
+    },
     async updateTask(id: string, input: UpdateTaskRequest) {
       const mutationListId = this.currentListId;
 
+      this.clearCompleteError(id);
       this.clearUpdateError(id);
       this.isUpdatingById = {
         ...this.isUpdatingById,

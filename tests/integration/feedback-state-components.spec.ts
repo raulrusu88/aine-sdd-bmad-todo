@@ -147,8 +147,14 @@ describe("feedback state components", () => {
       taskListRender,
       {
         isLoading: false,
+        kicker: "Tasks in this list",
+        listAriaLabel: "Tasks in this list",
         loadError: "The tasks could not be loaded.",
+        panelTestId: null,
         tasks: [],
+        title: "Active tasks",
+        titleId: "task-list-title",
+        tone: "default",
       },
       {
         FeedbackEmptyState,

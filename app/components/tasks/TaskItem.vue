@@ -22,11 +22,24 @@ const taskTagInputDraft = ref("");
 const taskTagsDraft = ref<string[]>([]);
 const taskTitleDraft = ref("");
 
+const completeError = computed(() =>
+  taskStore.completeErrorForTask(props.task.id),
+);
 const deleteError = computed(() => taskStore.deleteErrorForTask(props.task.id));
+const isCompleting = computed(() => taskStore.isCompletingTask(props.task.id));
 const isDeleting = computed(() => taskStore.isDeletingTask(props.task.id));
-const isMutating = computed(() => isDeleting.value || isUpdating.value);
+const isMutating = computed(
+  () => isCompleting.value || isDeleting.value || isUpdating.value,
+);
+const isCompleteActionDisabled = computed(
+  () => isMutating.value || isDeletePanelOpen.value || isEditPanelOpen.value,
+);
+const isTaskCompleted = computed(() => props.task.isCompleted);
 const isUpdating = computed(() => taskStore.isUpdatingTask(props.task.id));
 const normalizedTaskDescription = computed(() => props.task.description ?? "");
+const taskStatusLabel = computed(() =>
+  isTaskCompleted.value ? "Completed" : "Active",
+);
 const updateError = computed(
   () => localUpdateError.value ?? taskStore.updateErrorForTask(props.task.id),
 );
@@ -112,6 +125,7 @@ function removeTaskTag(index: number) {
 
 function clearMutationErrors() {
   localUpdateError.value = null;
+  taskStore.clearCompleteError(props.task.id);
   taskStore.clearDeleteError(props.task.id);
   taskStore.clearUpdateError(props.task.id);
 }
@@ -145,6 +159,7 @@ async function openEditPanel() {
 function openDeletePanel() {
   isEditPanelOpen.value = false;
   localUpdateError.value = null;
+  taskStore.clearCompleteError(props.task.id);
   taskStore.clearUpdateError(props.task.id);
   taskStore.clearDeleteError(props.task.id);
   isDeletePanelOpen.value = true;
@@ -199,8 +214,26 @@ async function handleUpdateTask() {
   closeEditPanel();
 }
 
+async function handleCompleteTask() {
+  uiFeedbackStore.clearSuccess();
+  clearMutationErrors();
+  const requestPath = route.path;
+
+  const completedTask = await taskStore.completeTask(props.task.id);
+
+  if (!completedTask || route.path !== requestPath) {
+    return;
+  }
+
+  uiFeedbackStore.showSuccess(
+    `Completed task "${completedTask.title}".`,
+    route.path,
+  );
+}
+
 async function handleDeleteTask() {
   uiFeedbackStore.clearSuccess();
+  clearMutationErrors();
   const deletedTask = await taskStore.deleteTask(props.task.id);
 
   if (!deletedTask) {
@@ -216,7 +249,9 @@ async function handleDeleteTask() {
 
 watch(
   () => [
+    props.task.completedAt,
     props.task.description,
+    props.task.isCompleted,
     props.task.title,
     props.task.tags.join("\u0000"),
   ],
@@ -232,10 +267,28 @@ watch(
 </script>
 
 <template>
-  <article class="task-item" data-testid="task-item">
+  <article
+    class="task-item"
+    :class="{ 'task-item--completed': isTaskCompleted }"
+    data-testid="task-item"
+  >
     <div class="task-item__header">
       <div class="task-item__copy">
-        <h4 class="task-item__title">{{ task.title }}</h4>
+        <div class="task-item__title-row">
+          <h4 class="task-item__title">{{ task.title }}</h4>
+
+          <span
+            class="task-status-badge"
+            :class="
+              isTaskCompleted
+                ? 'task-status-badge--completed'
+                : 'task-status-badge--active'
+            "
+            data-testid="task-status-badge"
+          >
+            {{ taskStatusLabel }}
+          </span>
+        </div>
 
         <p
           v-if="task.description"
@@ -257,10 +310,24 @@ watch(
         </ul>
       </div>
 
-      <TasksTaskMetadataBadge :created-at="task.createdAt" />
+      <TasksTaskMetadataBadge
+        :completed-at="task.completedAt"
+        :created-at="task.createdAt"
+      />
     </div>
 
     <div class="task-item__actions">
+      <button
+        v-if="!isTaskCompleted"
+        class="button-primary"
+        :disabled="isCompleteActionDisabled"
+        data-testid="task-complete-toggle"
+        type="button"
+        @click="handleCompleteTask"
+      >
+        Mark completed
+      </button>
+
       <button
         class="button-secondary"
         :disabled="isMutating"
@@ -281,6 +348,15 @@ watch(
         Delete task
       </button>
     </div>
+
+    <p
+      v-if="completeError"
+      class="error-text"
+      data-testid="task-complete-error-banner"
+      role="alert"
+    >
+      {{ completeError }}
+    </p>
 
     <form
       v-if="isEditPanelOpen"

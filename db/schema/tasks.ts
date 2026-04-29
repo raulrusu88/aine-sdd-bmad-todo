@@ -5,6 +5,7 @@ import { todoLists } from "./todoLists";
 export const tasks = sqliteTable(
   "tasks",
   {
+    completedAt: text("completed_at"),
     createdAt: text("created_at").notNull(),
     description: text("description"),
     id: text("id").primaryKey(),

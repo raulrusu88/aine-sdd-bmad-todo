@@ -7,9 +7,11 @@ import type { Task, TaskCollectionResponse } from "~~/shared/types/api";
 
 function createTask(overrides: Partial<Task> = {}): Task {
   return {
+    completedAt: null,
     createdAt: "2026-04-28T12:00:00.000Z",
     description: "Review acceptance criteria",
     id: "task-1",
+    isCompleted: false,
     listId: "list-1",
     tags: [],
     title: "Plan sprint",
@@ -284,6 +286,96 @@ describe("useTaskStore", () => {
 
     expect(store.allTasks).toEqual([updatedTask]);
     expect(store.tasks).toEqual([]);
+  });
+
+  it("moves completed tasks out of active work without losing them from the filtered task set", async () => {
+    const store = useTaskStore();
+    const activeTask = createTask();
+    const secondTask = createTask({
+      createdAt: "2026-04-28T12:01:00.000Z",
+      id: "task-2",
+      title: "Buy groceries",
+    });
+    const completedTask = createTask({
+      completedAt: "2026-04-28T12:15:00.000Z",
+      createdAt: secondTask.createdAt,
+      id: secondTask.id,
+      isCompleted: true,
+      title: secondTask.title,
+    });
+
+    store.$patch({
+      allTasks: [activeTask, secondTask],
+      currentListId: activeTask.listId,
+      tasks: [activeTask, secondTask],
+    });
+
+    fetchMock.mockResolvedValueOnce(completedTask);
+
+    await expect(store.completeTask(secondTask.id)).resolves.toEqual(
+      completedTask,
+    );
+
+    expect(store.activeTasks).toEqual([activeTask]);
+    expect(store.completedTasks).toEqual([completedTask]);
+    expect(store.completeErrorForTask(secondTask.id)).toBeNull();
+    expect(store.isCompletingTask(secondTask.id)).toBe(false);
+  });
+
+  it("preserves the last confirmed task state when completion fails", async () => {
+    const store = useTaskStore();
+    const task = createTask();
+
+    store.$patch({
+      allTasks: [task],
+      currentListId: task.listId,
+      tasks: [task],
+    });
+
+    fetchMock.mockRejectedValueOnce(
+      createApiError(500, "The task could not be completed. Try again."),
+    );
+
+    await expect(store.completeTask(task.id)).resolves.toBeNull();
+
+    expect(store.tasks).toEqual([task]);
+    expect(store.activeTasks).toEqual([task]);
+    expect(store.completedTasks).toEqual([]);
+    expect(store.completeErrorForTask(task.id)).toBe(
+      "The task could not be completed. Try again.",
+    );
+    expect(store.isCompletingTask(task.id)).toBe(false);
+  });
+
+  it("ignores late completion responses after the task workspace resets", async () => {
+    const store = useTaskStore();
+    const task = createTask();
+    const completedTask = createTask({
+      completedAt: "2026-04-28T12:15:00.000Z",
+      isCompleted: true,
+    });
+    const pendingCompletion = createDeferred<Task>();
+
+    store.$patch({
+      allTasks: [task],
+      currentListId: task.listId,
+      tasks: [task],
+    });
+
+    fetchMock.mockReturnValueOnce(pendingCompletion.promise);
+
+    const completePromise = store.completeTask(task.id);
+
+    store.resetTasks();
+    pendingCompletion.resolve(completedTask);
+
+    await expect(completePromise).resolves.toEqual(completedTask);
+
+    expect(store.completeErrorForTask(task.id)).toBeNull();
+    expect(store.currentListId).toBeNull();
+    expect(store.tasks).toEqual([]);
+    expect(store.activeTasks).toEqual([]);
+    expect(store.completedTasks).toEqual([]);
   });
 
   it("applies persisted tag updates to the active task list", async () => {

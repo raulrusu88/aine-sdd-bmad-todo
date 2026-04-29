@@ -52,6 +52,16 @@ export function updateTaskById(
   return findTaskById(id, database);
 }
 
+export function markTaskCompletedById(
+  id: string,
+  completedAt: string,
+  database: DbClient = getDb(),
+): TaskRecord | undefined {
+  database.update(tasks).set({ completedAt }).where(eq(tasks.id, id)).run();
+
+  return findTaskById(id, database);
+}
+
 export function listTaskTagsByTaskIds(
   taskIds: string[],
   database: DbClient = getDb(),

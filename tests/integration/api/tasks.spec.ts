@@ -13,6 +13,7 @@ import {
   deleteTodoListRecord,
 } from "~~/server/lib/services/listService";
 import {
+  completeTaskRecord,
   createTaskRecord,
   deleteTaskRecord,
   getTaskById,
@@ -181,6 +182,54 @@ describe("task validation and persistence", () => {
     ).rejects.toMatchObject({
       code: "NOT_FOUND",
       statusCode: 404,
+    });
+  });
+
+  it("marks tasks completed through the service layer without removing them from list retrieval", async () => {
+    const testDatabase = createListTestDatabase();
+    cleanup = testDatabase.cleanup;
+
+    const parentList = await createTodoListRecord(
+      {
+        name: "Work",
+      },
+      testDatabase.db,
+    );
+    const createdTask = await createTaskRecord(
+      {
+        description: "Review acceptance criteria",
+        listId: parentList.id,
+        title: "Plan sprint",
+      },
+      testDatabase.db,
+    );
+
+    const completedTask = await completeTaskRecord(
+      createdTask.id,
+      testDatabase.db,
+    );
+    const listTasks = await getTasksByListId(parentList.id, testDatabase.db);
+    const fetchedTask = await getTaskById(createdTask.id, testDatabase.db);
+
+    expect(completedTask).toMatchObject({
+      completedAt: expect.any(String),
+      id: createdTask.id,
+      isCompleted: true,
+      listId: parentList.id,
+      title: createdTask.title,
+    });
+    expect(listTasks).toHaveLength(1);
+    expect(listTasks[0]).toMatchObject({
+      completedAt: completedTask.completedAt,
+      id: createdTask.id,
+      isCompleted: true,
+      title: createdTask.title,
+    });
+    expect(fetchedTask).toMatchObject({
+      completedAt: completedTask.completedAt,
+      id: createdTask.id,
+      isCompleted: true,
+      title: createdTask.title,
     });
   });
 
@@ -703,6 +752,62 @@ describe("task API", () => {
     expect(postDeleteCollectionBody).toEqual({
       items: [],
       total: 0,
+    });
+  });
+
+  it("completes a task through the API and keeps it in the list collection as completed work", async () => {
+    const context = await createListApiTestContext();
+    cleanup = context.cleanup;
+
+    const listResponse = await fetch(`${context.url}/api/lists`, {
+      body: JSON.stringify({
+        name: "Work",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const parentList = (await listResponse.json()) as TodoList;
+
+    const createResponse = await fetch(`${context.url}/api/tasks`, {
+      body: JSON.stringify({
+        description: "Review acceptance criteria",
+        listId: parentList.id,
+        title: "Plan sprint",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const createdTask = (await createResponse.json()) as Task;
+
+    const completeResponse = await fetch(
+      `${context.url}/api/tasks/${createdTask.id}/complete`,
+      {
+        method: "POST",
+      },
+    );
+    const completedTask = (await completeResponse.json()) as Task;
+    const collectionResponse = await fetch(
+      `${context.url}/api/tasks?listId=${parentList.id}`,
+    );
+    const collectionBody =
+      (await collectionResponse.json()) as TaskCollectionResponse;
+
+    expect(completeResponse.status).toBe(200);
+    expect(completedTask).toMatchObject({
+      completedAt: expect.any(String),
+      id: createdTask.id,
+      isCompleted: true,
+      listId: parentList.id,
+      title: createdTask.title,
+    });
+    expect(collectionResponse.status).toBe(200);
+    expect(collectionBody).toEqual({
+      items: [completedTask],
+      total: 1,
     });
   });
 

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-28T11:05:25Z
-last_updated: 2026-04-29T07:44:33Z
+last_updated: 2026-04-29T08:36:17Z
 project: aine-bmad-todo
 project_key: NOKEY
 tracking_system: file-system
@@ -53,7 +53,7 @@ development_status:
   epic-2: in-progress
   2-1-assign-and-display-tags-on-tasks: done
   2-2-filter-tasks-by-tag: done
-  2-3-mark-tasks-completed-and-separate-active-work: ready-for-dev
+  2-3-mark-tasks-completed-and-separate-active-work: done
   2-4-retain-completed-tasks-as-accessible-in-app-history-state: backlog
   epic-2-retrospective: optional
   epic-3: backlog

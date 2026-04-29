@@ -41,9 +41,11 @@ export interface DeleteTodoListResponse {
 export type TaskTag = string;
 
 export interface Task {
+  completedAt: string | null;
   createdAt: string;
   description: string | null;
   id: string;
+  isCompleted: boolean;
   listId: string;
   tags: TaskTag[];
   title: string;
