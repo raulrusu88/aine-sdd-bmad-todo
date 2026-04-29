@@ -1,0 +1,10 @@
+.git
+.github
+.nuxt
+.output
+_bmad-output
+coverage
+dist
+node_modules
+playwright-report
+test-results

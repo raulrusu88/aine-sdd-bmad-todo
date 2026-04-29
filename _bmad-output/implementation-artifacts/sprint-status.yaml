@@ -1,0 +1,64 @@
+# generated: 2026-04-28T11:05:25Z
+# last_updated: 2026-04-28T11:12:37Z
+# project: aine-bmad-todo
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: /Users/raul/Documents/Development/Work/nearform/aine-program-spec-driven-dev/aine-bmad-todo/_bmad-output/implementation-artifacts
+#
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-04-28T11:05:25Z
+last_updated: 2026-04-28T17:59:33Z
+project: aine-bmad-todo
+project_key: NOKEY
+tracking_system: file-system
+story_location: /Users/raul/Documents/Development/Work/nearform/aine-program-spec-driven-dev/aine-bmad-todo/_bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: done
+  1-1-set-up-initial-project-from-starter-template: done
+  1-2-create-view-and-open-todo-lists: done
+  1-3-rename-and-delete-todo-lists: done
+  1-4-create-and-view-tasks-within-a-list: done
+  1-5-edit-and-delete-tasks: done
+  1-6-preserve-baseline-state-and-communicate-system-status: done
+  epic-1-retrospective: optional
+  epic-2: backlog
+  2-1-assign-and-display-tags-on-tasks: backlog
+  2-2-filter-tasks-by-tag: backlog
+  2-3-mark-tasks-completed-and-separate-active-work: backlog
+  2-4-retain-completed-tasks-as-accessible-in-app-history-state: backlog
+  epic-2-retrospective: optional
+  epic-3: backlog
+  3-1-browse-and-retrieve-completed-task-history: backlog
+  3-2-restore-consistent-workspace-state-across-later-sessions: backlog
+  3-3-communicate-failures-clearly-and-support-recovery: backlog
+  3-4-capture-actionable-failure-context-for-maintainers: backlog
+  epic-3-retrospective: optional
