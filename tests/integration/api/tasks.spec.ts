@@ -16,6 +16,7 @@ import {
   createTaskRecord,
   deleteTaskRecord,
   getTaskById,
+  getTasksByListIdAndTag,
   getTasksByListId,
   updateTaskRecord,
 } from "~~/server/lib/services/taskService";
@@ -181,6 +182,94 @@ describe("task validation and persistence", () => {
       code: "NOT_FOUND",
       statusCode: 404,
     });
+  });
+
+  it("filters tasks by tag through the service layer", async () => {
+    const testDatabase = createListTestDatabase();
+    cleanup = testDatabase.cleanup;
+
+    const workList = await createTodoListRecord(
+      {
+        name: "Work",
+      },
+      testDatabase.db,
+    );
+    const errandsList = await createTodoListRecord(
+      {
+        name: "Errands",
+      },
+      testDatabase.db,
+    );
+    const urgentTask = await createTaskRecord(
+      {
+        listId: workList.id,
+        title: "Finalize sprint plan",
+      },
+      testDatabase.db,
+    );
+    const callsTask = await createTaskRecord(
+      {
+        listId: workList.id,
+        title: "Call vendor",
+      },
+      testDatabase.db,
+    );
+    const errandsTask = await createTaskRecord(
+      {
+        listId: errandsList.id,
+        title: "Call plumber",
+      },
+      testDatabase.db,
+    );
+
+    await updateTaskRecord(
+      urgentTask.id,
+      {
+        description: urgentTask.description ?? undefined,
+        tags: ["urgent"],
+        title: urgentTask.title,
+      },
+      testDatabase.db,
+    );
+    await updateTaskRecord(
+      callsTask.id,
+      {
+        description: callsTask.description ?? undefined,
+        tags: ["Calls"],
+        title: callsTask.title,
+      },
+      testDatabase.db,
+    );
+    await updateTaskRecord(
+      errandsTask.id,
+      {
+        description: errandsTask.description ?? undefined,
+        tags: ["urgent"],
+        title: errandsTask.title,
+      },
+      testDatabase.db,
+    );
+
+    await expect(
+      getTasksByListIdAndTag(workList.id, "URGENT", testDatabase.db),
+    ).resolves.toMatchObject([
+      {
+        id: urgentTask.id,
+        listId: workList.id,
+        tags: ["urgent"],
+        title: urgentTask.title,
+      },
+    ]);
+    await expect(
+      getTasksByListIdAndTag(workList.id, "calls", testDatabase.db),
+    ).resolves.toMatchObject([
+      {
+        id: callsTask.id,
+        listId: workList.id,
+        tags: ["Calls"],
+        title: callsTask.title,
+      },
+    ]);
   });
 
   it("rejects invalid task tag updates before persistence", async () => {
@@ -401,6 +490,109 @@ describe("task API", () => {
     });
   });
 
+  it("filters tasks by tag through the API and returns empty collections when nothing matches", async () => {
+    const context = await createListApiTestContext();
+    cleanup = context.cleanup;
+
+    const workResponse = await fetch(`${context.url}/api/lists`, {
+      body: JSON.stringify({
+        name: "Work",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const workList = (await workResponse.json()) as TodoList;
+
+    const errandsResponse = await fetch(`${context.url}/api/lists`, {
+      body: JSON.stringify({
+        name: "Errands",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const errandsList = (await errandsResponse.json()) as TodoList;
+
+    const workTaskResponse = await fetch(`${context.url}/api/tasks`, {
+      body: JSON.stringify({
+        listId: workList.id,
+        title: "Plan sprint",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const workTask = (await workTaskResponse.json()) as Task;
+
+    const errandsTaskResponse = await fetch(`${context.url}/api/tasks`, {
+      body: JSON.stringify({
+        listId: errandsList.id,
+        title: "Plan errands",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const errandsTask = (await errandsTaskResponse.json()) as Task;
+
+    await fetch(`${context.url}/api/tasks/${workTask.id}`, {
+      body: JSON.stringify({
+        description: workTask.description ?? undefined,
+        tags: ["urgent", "Calls"],
+        title: workTask.title,
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "PATCH",
+    });
+    await fetch(`${context.url}/api/tasks/${errandsTask.id}`, {
+      body: JSON.stringify({
+        description: errandsTask.description ?? undefined,
+        tags: ["urgent"],
+        title: errandsTask.title,
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "PATCH",
+    });
+
+    const urgentResponse = await fetch(
+      `${context.url}/api/tasks?listId=${workList.id}&tag=URGENT`,
+    );
+    const urgentBody = (await urgentResponse.json()) as TaskCollectionResponse;
+
+    const noMatchResponse = await fetch(
+      `${context.url}/api/tasks?listId=${workList.id}&tag=weekend`,
+    );
+    const noMatchBody =
+      (await noMatchResponse.json()) as TaskCollectionResponse;
+
+    expect(urgentResponse.status).toBe(200);
+    expect(urgentBody).toEqual({
+      items: [
+        expect.objectContaining({
+          id: workTask.id,
+          listId: workList.id,
+          tags: ["urgent", "Calls"],
+          title: "Plan sprint",
+        }),
+      ],
+      total: 1,
+    });
+    expect(noMatchResponse.status).toBe(200);
+    expect(noMatchBody).toEqual({
+      items: [],
+      total: 0,
+    });
+  });
+
   it("updates and deletes tasks through the API", async () => {
     const context = await createListApiTestContext();
     cleanup = context.cleanup;
@@ -588,11 +780,28 @@ describe("task API", () => {
     const context = await createListApiTestContext();
     cleanup = context.cleanup;
 
+    const listResponse = await fetch(`${context.url}/api/lists`, {
+      body: JSON.stringify({
+        name: "Work",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const parentList = (await listResponse.json()) as TodoList;
+
     const invalidListQueryResponse = await fetch(
       `${context.url}/api/tasks?listId=`,
     );
     const invalidListQueryBody =
       (await invalidListQueryResponse.json()) as ApiErrorResponse;
+
+    const invalidTagQueryResponse = await fetch(
+      `${context.url}/api/tasks?listId=${parentList.id}&tag=${"x".repeat(41)}`,
+    );
+    const invalidTagQueryBody =
+      (await invalidTagQueryResponse.json()) as ApiErrorResponse;
 
     const missingTaskResponse = await fetch(
       `${context.url}/api/tasks/missing-task`,
@@ -608,6 +817,16 @@ describe("task API", () => {
           root: ["Too small: expected string to have >=1 characters"],
         },
         message: "Please provide a valid todo list identifier.",
+      },
+    });
+    expect(invalidTagQueryResponse.status).toBe(400);
+    expect(invalidTagQueryBody).toEqual({
+      error: {
+        code: "VALIDATION_ERROR",
+        details: {
+          tag: ["Tag must be 40 characters or fewer"],
+        },
+        message: "Please provide a valid task filter.",
       },
     });
     expect(missingTaskResponse.status).toBe(404);

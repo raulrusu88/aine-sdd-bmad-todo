@@ -1,5 +1,11 @@
 import { defineStore } from "pinia";
 
+import {
+  collectAvailableTaskTags,
+  filterTasksByTag,
+  normalizeTaskFilterTag,
+} from "~~/app/composables/useTaskFilters";
+
 import type {
   CreateTaskRequest,
   DeleteTaskResponse,
@@ -138,6 +144,8 @@ function shouldApplyTaskMutation(
 
 export const useTaskStore = defineStore("tasks", {
   state: () => ({
+    activeTagFilter: null as string | null,
+    allTasks: [] as Task[],
     createError: null as string | null,
     currentListId: null as string | null,
     deleteErrors: {} as Record<string, string>,
@@ -146,15 +154,22 @@ export const useTaskStore = defineStore("tasks", {
     isLoading: false,
     isUpdatingById: {} as Record<string, boolean>,
     loadError: null as string | null,
+    loadRequestId: 0,
     tasks: [] as Task[],
     updateErrors: {} as Record<string, string>,
   }),
   getters: {
+    availableTaskTags(state) {
+      return collectAvailableTaskTags(state.allTasks);
+    },
     deleteErrorForTask(state) {
       return (id: string) => state.deleteErrors[id] ?? null;
     },
     hasTasks(state) {
       return state.tasks.length > 0;
+    },
+    hasActiveTagFilter(state) {
+      return state.activeTagFilter !== null;
     },
     isDeletingTask(state) {
       return (id: string) => state.isDeletingById[id] ?? false;
@@ -182,6 +197,13 @@ export const useTaskStore = defineStore("tasks", {
     clearLoadError() {
       this.loadError = null;
     },
+    clearTagFilter() {
+      this.loadRequestId += 1;
+      this.clearLoadError();
+      this.activeTagFilter = null;
+      this.isLoading = false;
+      this.tasks = [...this.allTasks];
+    },
     clearUpdateError(taskId?: string) {
       if (!taskId) {
         this.updateErrors = {};
@@ -192,39 +214,54 @@ export const useTaskStore = defineStore("tasks", {
       this.updateErrors = omitRecordEntry(this.updateErrors, taskId);
     },
     resetTasks(listId: string | null = null) {
+      this.loadRequestId += 1;
       this.clearCreateError();
       this.clearDeleteError();
       this.clearLoadError();
       this.clearUpdateError();
+      this.activeTagFilter = null;
+      this.allTasks = [];
       this.currentListId = listId;
       this.isDeletingById = {};
+      this.isLoading = false;
       this.isUpdatingById = {};
       this.tasks = [];
     },
     async loadTasks(listId: string) {
+      const requestId = ++this.loadRequestId;
       const requestedListId = listId;
 
       this.clearLoadError();
+      this.activeTagFilter = null;
+      this.allTasks = [];
       this.currentListId = listId;
       this.isLoading = true;
       this.tasks = [];
 
       try {
         const response = await $fetch<TaskCollectionResponse>("/api/tasks", {
+          cache: "no-store",
           query: {
             listId,
           },
         });
 
-        if (this.currentListId !== requestedListId) {
+        if (
+          this.currentListId !== requestedListId ||
+          this.loadRequestId !== requestId
+        ) {
           return this.tasks;
         }
 
+        this.allTasks = response.items;
         this.tasks = response.items;
 
         return response.items;
       } catch (error) {
-        if (this.currentListId !== requestedListId) {
+        if (
+          this.currentListId !== requestedListId ||
+          this.loadRequestId !== requestId
+        ) {
           return [];
         }
 
@@ -233,11 +270,86 @@ export const useTaskStore = defineStore("tasks", {
           "The tasks could not be loaded.",
         ).message;
 
+        this.allTasks = [];
         this.tasks = [];
 
         return [];
       } finally {
-        if (this.currentListId === requestedListId) {
+        if (
+          this.currentListId === requestedListId &&
+          this.loadRequestId === requestId
+        ) {
+          this.isLoading = false;
+        }
+      }
+    },
+    async applyTagFilter(tag: string) {
+      const requestedListId = this.currentListId;
+
+      if (!requestedListId) {
+        return [];
+      }
+
+      const nextFilter = normalizeTaskFilterTag(tag);
+
+      if (!nextFilter) {
+        this.clearTagFilter();
+
+        return this.tasks;
+      }
+
+      if (
+        this.activeTagFilter &&
+        normalizeTaskFilterTag(this.activeTagFilter) === nextFilter &&
+        !this.loadError
+      ) {
+        return this.tasks;
+      }
+
+      const requestId = ++this.loadRequestId;
+
+      this.clearLoadError();
+      this.isLoading = true;
+
+      try {
+        const response = await $fetch<TaskCollectionResponse>("/api/tasks", {
+          cache: "no-store",
+          query: {
+            listId: requestedListId,
+            tag: nextFilter,
+          },
+        });
+
+        if (
+          !shouldApplyTaskMutation(this.currentListId, requestedListId) ||
+          this.loadRequestId !== requestId
+        ) {
+          return this.tasks;
+        }
+
+        this.activeTagFilter = nextFilter;
+        this.tasks = response.items;
+
+        return response.items;
+      } catch (error) {
+        if (
+          !shouldApplyTaskMutation(this.currentListId, requestedListId) ||
+          this.loadRequestId !== requestId
+        ) {
+          return this.tasks;
+        }
+
+        this.loadError = extractApiErrorInfo(
+          error,
+          "The tasks could not be filtered. Clear the filter or try a different tag.",
+        ).message;
+
+        return this.tasks;
+      } finally {
+        if (
+          shouldApplyTaskMutation(this.currentListId, requestedListId) &&
+          this.loadRequestId === requestId
+        ) {
           this.isLoading = false;
         }
       }
@@ -258,7 +370,8 @@ export const useTaskStore = defineStore("tasks", {
           return null;
         }
 
-        this.tasks = upsertTask(this.tasks, createdTask);
+        this.allTasks = upsertTask(this.allTasks, createdTask);
+        this.tasks = filterTasksByTag(this.allTasks, this.activeTagFilter);
 
         return createdTask;
       } catch (error) {
@@ -291,6 +404,7 @@ export const useTaskStore = defineStore("tasks", {
         });
 
         if (shouldApplyTaskMutation(this.currentListId, mutationListId)) {
+          this.allTasks = removeTask(this.allTasks, response.id);
           this.tasks = removeTask(this.tasks, response.id);
         }
 
@@ -306,6 +420,7 @@ export const useTaskStore = defineStore("tasks", {
         }
 
         if (apiError.statusCode === 404) {
+          this.allTasks = removeTask(this.allTasks, id);
           this.tasks = removeTask(this.tasks, id);
 
           return null;
@@ -340,7 +455,8 @@ export const useTaskStore = defineStore("tasks", {
           shouldApplyTaskMutation(this.currentListId, mutationListId) &&
           mutationListId === updatedTask.listId
         ) {
-          this.tasks = upsertTask(this.tasks, updatedTask);
+          this.allTasks = upsertTask(this.allTasks, updatedTask);
+          this.tasks = filterTasksByTag(this.allTasks, this.activeTagFilter);
         }
 
         return updatedTask;
@@ -355,6 +471,7 @@ export const useTaskStore = defineStore("tasks", {
         }
 
         if (apiError.statusCode === 404) {
+          this.allTasks = removeTask(this.allTasks, id);
           this.tasks = removeTask(this.tasks, id);
 
           return null;

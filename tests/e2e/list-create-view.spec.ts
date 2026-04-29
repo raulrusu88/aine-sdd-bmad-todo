@@ -89,6 +89,18 @@ test("creates, renames, deletes, and safely recovers list workspaces", async ({
   );
   await expect(createdTask.getByTestId("task-tag-list")).toContainText("calls");
 
+  await page.getByTestId("task-title-input").fill("Buy groceries");
+  await page.getByTestId("task-create-button").click();
+  await expect(page.getByTestId("success-notice")).toContainText(
+    'Created task "Buy groceries".',
+  );
+
+  const secondTask = page.getByTestId("task-item").filter({
+    hasText: "Buy groceries",
+  });
+
+  await expect(secondTask).toHaveCount(1);
+
   await page.getByRole("link", { name: "Workspace" }).click();
 
   await expect(page).toHaveURL("/");
@@ -100,6 +112,92 @@ test("creates, renames, deletes, and safely recovers list workspaces", async ({
   await page.getByTestId("list-nav-item").filter({ hasText: "Work" }).click();
 
   await expect(page.getByRole("heading", { name: /^Work$/ })).toBeVisible();
+  await expect(page.getByTestId("tag-filter-bar")).toBeVisible();
+  await expect(
+    page.getByTestId("tag-filter-chip").filter({ hasText: "urgent" }),
+  ).toHaveCount(1);
+  await page
+    .getByTestId("tag-filter-chip")
+    .filter({ hasText: "urgent" })
+    .focus();
+  await page
+    .getByTestId("tag-filter-chip")
+    .filter({ hasText: "urgent" })
+    .press("Enter");
+
+  await expect(page.getByTestId("tag-filter-status")).toContainText(
+    'Showing tasks tagged "urgent".',
+  );
+  await expect(createdTask).toHaveCount(1);
+  await expect(secondTask).toHaveCount(0);
+  await expect(page.getByTestId("task-title-input")).toBeDisabled();
+  await expect(page.getByTestId("task-create-button")).toBeDisabled();
+  await expect(
+    page.getByText(/Clear the "urgent" tag filter before adding a new task/),
+  ).toBeVisible();
+
+  await page.getByTestId("tag-filter-clear").click();
+  await expect(page.getByTestId("tag-filter-status")).toHaveCount(0);
+  await expect(createdTask).toHaveCount(1);
+  await expect(secondTask).toHaveCount(1);
+  await expect(page.getByTestId("task-title-input")).toBeEditable();
+  await expect(page.getByTestId("task-create-button")).toBeEnabled();
+
+  let shouldReturnEmptyFilteredList = true;
+
+  await page.route("**/api/tasks*", async (route) => {
+    const url = new URL(route.request().url());
+
+    if (
+      route.request().method() !== "GET" ||
+      url.pathname !== "/api/tasks" ||
+      url.searchParams.get("tag") !== "calls" ||
+      !shouldReturnEmptyFilteredList
+    ) {
+      await route.continue();
+
+      return;
+    }
+
+    shouldReturnEmptyFilteredList = false;
+
+    await route.fulfill({
+      body: JSON.stringify({
+        items: [],
+        total: 0,
+      }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+
+  await page
+    .getByTestId("tag-filter-chip")
+    .filter({ hasText: "Calls" })
+    .click();
+
+  await expect(page.getByTestId("tag-filter-status")).toContainText(
+    'Showing tasks tagged "calls".',
+  );
+  await expect(page.getByTestId("task-list-filter-empty-state")).toContainText(
+    'No tasks match the "calls" tag yet.',
+  );
+
+  await page.getByTestId("tag-filter-clear").click();
+  await expect(page.getByTestId("tag-filter-status")).toHaveCount(0);
+  await expect(createdTask).toHaveCount(1);
+  await expect(secondTask).toHaveCount(1);
+
+  await page.unroute("**/api/tasks*");
+
+  await secondTask.getByTestId("task-delete-toggle").click();
+  await expect(secondTask.getByTestId("task-delete-panel")).toBeVisible();
+  await secondTask.getByTestId("task-delete-confirm").click();
+
+  await expect(page.getByTestId("success-notice")).toContainText(
+    'Deleted task "Buy groceries".',
+  );
+  await expect(secondTask).toHaveCount(0);
 
   await createdTask.getByTestId("task-edit-toggle").click();
   await createdTask.getByRole("button", { name: "Remove calls tag" }).click();

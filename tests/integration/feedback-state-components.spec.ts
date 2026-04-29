@@ -25,6 +25,9 @@ function loadTemplate(filePath: string) {
 const listSidebarRender = loadTemplate(
   "../../app/components/lists/ListSidebar.vue",
 );
+const taskFilterBarRender = loadTemplate(
+  "../../app/components/filters/TaskFilterBar.vue",
+);
 const taskListRender = loadTemplate("../../app/components/tasks/TaskList.vue");
 
 const FeedbackEmptyState = Vue.defineComponent({
@@ -157,5 +160,53 @@ describe("feedback state components", () => {
     expect(html).toContain("task-list-error-banner");
     expect(html).toContain("The tasks could not be loaded.");
     expect(html).not.toContain("task-list-empty-state");
+  });
+
+  it("renders a filter recovery action even when no tag is active", async () => {
+    const taskFilterBar = Vue.defineComponent({
+      props: {
+        activeTag: {
+          default: null,
+          type: String,
+        },
+        isDisabled: {
+          default: false,
+          type: Boolean,
+        },
+        isLoading: {
+          default: false,
+          type: Boolean,
+        },
+        loadError: {
+          default: null,
+          type: String,
+        },
+        tags: {
+          default: () => [],
+          type: Array,
+        },
+      },
+      render: taskFilterBarRender,
+      setup() {
+        return {
+          isTagActive: () => false,
+        };
+      },
+    });
+
+    const html = await renderToString(
+      Vue.createSSRApp({
+        render: () =>
+          Vue.h(taskFilterBar, {
+            loadError:
+              "The tasks could not be filtered. Clear the filter or try a different tag.",
+            tags: [],
+          }),
+      }),
+    );
+
+    expect(html).toContain("tag-filter-bar");
+    expect(html).toContain("tag-filter-clear");
+    expect(html).toContain("Dismiss error");
   });
 });

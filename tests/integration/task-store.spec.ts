@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useTaskStore } from "~~/app/stores/useTaskStore";
 
-import type { Task } from "~~/shared/types/api";
+import type { Task, TaskCollectionResponse } from "~~/shared/types/api";
 
 function createTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -161,6 +161,128 @@ describe("useTaskStore", () => {
     expect(store.createError).toBeNull();
     expect(store.currentListId).toBeNull();
     expect(store.isCreating).toBe(false);
+    expect(store.tasks).toEqual([]);
+  });
+
+  it("applies and clears tag filters without losing the full task list", async () => {
+    const store = useTaskStore();
+    const urgentTask = createTask({
+      tags: ["urgent"],
+    });
+    const callsTask = createTask({
+      createdAt: "2026-04-28T12:01:00.000Z",
+      id: "task-2",
+      tags: ["Calls"],
+      title: "Call vendor",
+    });
+
+    fetchMock.mockResolvedValueOnce({
+      items: [urgentTask, callsTask],
+      total: 2,
+    } satisfies TaskCollectionResponse);
+
+    await expect(store.loadTasks(urgentTask.listId)).resolves.toEqual([
+      urgentTask,
+      callsTask,
+    ]);
+
+    fetchMock.mockResolvedValueOnce({
+      items: [urgentTask],
+      total: 1,
+    } satisfies TaskCollectionResponse);
+
+    await expect(store.applyTagFilter("urgent")).resolves.toEqual([urgentTask]);
+
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/tasks", {
+      cache: "no-store",
+      query: {
+        listId: urgentTask.listId,
+        tag: "urgent",
+      },
+    });
+    expect(store.activeTagFilter).toBe("urgent");
+    expect(store.availableTaskTags).toEqual(["Calls", "urgent"]);
+    expect(store.tasks).toEqual([urgentTask]);
+
+    store.clearTagFilter();
+
+    expect(store.activeTagFilter).toBeNull();
+    expect(store.loadError).toBeNull();
+    expect(store.tasks).toEqual([urgentTask, callsTask]);
+  });
+
+  it("preserves the last confirmed task view when a filter request fails", async () => {
+    const store = useTaskStore();
+    const urgentTask = createTask({
+      tags: ["urgent"],
+    });
+    const callsTask = createTask({
+      createdAt: "2026-04-28T12:01:00.000Z",
+      id: "task-2",
+      tags: ["Calls"],
+      title: "Call vendor",
+    });
+
+    fetchMock.mockResolvedValueOnce({
+      items: [urgentTask, callsTask],
+      total: 2,
+    } satisfies TaskCollectionResponse);
+
+    await store.loadTasks(urgentTask.listId);
+
+    fetchMock.mockRejectedValueOnce(
+      createApiError(
+        500,
+        "The tasks could not be filtered. Clear the filter or try a different tag.",
+      ),
+    );
+
+    await expect(store.applyTagFilter("urgent")).resolves.toEqual([
+      urgentTask,
+      callsTask,
+    ]);
+
+    expect(store.activeTagFilter).toBeNull();
+    expect(store.loadError).toBe(
+      "The tasks could not be filtered. Clear the filter or try a different tag.",
+    );
+    expect(store.tasks).toEqual([urgentTask, callsTask]);
+
+    store.clearTagFilter();
+
+    expect(store.activeTagFilter).toBeNull();
+    expect(store.loadError).toBeNull();
+    expect(store.tasks).toEqual([urgentTask, callsTask]);
+  });
+
+  it("keeps filtered task visibility aligned after tag updates", async () => {
+    const store = useTaskStore();
+    const task = createTask({
+      tags: ["urgent"],
+    });
+    const updatedTask = createTask({
+      tags: ["weekend"],
+      title: "Finalize sprint plan",
+    });
+
+    store.$patch({
+      activeTagFilter: "urgent",
+      allTasks: [task],
+      currentListId: task.listId,
+      tasks: [task],
+    });
+
+    fetchMock.mockResolvedValueOnce(updatedTask);
+
+    await expect(
+      store.updateTask(task.id, {
+        description: task.description ?? undefined,
+        tags: ["weekend"],
+        title: updatedTask.title,
+      }),
+    ).resolves.toEqual(updatedTask);
+
+    expect(store.allTasks).toEqual([updatedTask]);
     expect(store.tasks).toEqual([]);
   });
 

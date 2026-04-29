@@ -3,11 +3,16 @@ import type { Task } from "~~/shared/types/api";
 
 withDefaults(
   defineProps<{
+    emptyMessage?: string;
+    emptyTestId?: string;
     isLoading?: boolean;
     loadError?: string | null;
     tasks: Task[];
   }>(),
   {
+    emptyMessage:
+      "No tasks yet. Add the first task for this list to get started.",
+    emptyTestId: "task-list-empty-state",
     isLoading: false,
     loadError: null,
   },
@@ -36,8 +41,8 @@ withDefaults(
 
     <FeedbackEmptyState
       v-if="!isLoading && !loadError && !tasks.length"
-      message="No tasks yet. Add the first task for this list to get started."
-      test-id="task-list-empty-state"
+      :message="emptyMessage"
+      :test-id="emptyTestId"
     />
 
     <ul v-if="tasks.length" class="task-list" aria-label="Tasks in this list">

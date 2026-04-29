@@ -29,8 +29,32 @@ const currentList = computed(() => listStore.getListById(routeListId.value));
 const renameErrorMessage = computed(
   () => localRenameError.value ?? listStore.renameError,
 );
+const shouldShowTaskFilterBar = computed(
+  () =>
+    taskStore.availableTaskTags.length > 0 ||
+    taskStore.hasActiveTagFilter ||
+    Boolean(taskStore.loadError),
+);
 const taskCreateErrorMessage = computed(
   () => localTaskError.value ?? taskStore.createError,
+);
+const taskComposerHelpMessage = computed(() =>
+  taskStore.activeTagFilter
+    ? `Clear the "${taskStore.activeTagFilter}" tag filter before adding a new task so the new item stays visible.`
+    : "Use a short title for quick scanning and add details only when they help.",
+);
+const isTaskComposerDisabled = computed(
+  () => !isInteractive.value || taskStore.hasActiveTagFilter,
+);
+const taskListEmptyMessage = computed(() =>
+  taskStore.activeTagFilter
+    ? `No tasks match the "${taskStore.activeTagFilter}" tag yet. Clear the filter or choose another tag.`
+    : "No tasks yet. Add the first task for this list to get started.",
+);
+const taskListEmptyTestId = computed(() =>
+  taskStore.activeTagFilter
+    ? "task-list-filter-empty-state"
+    : "task-list-empty-state",
 );
 const isWorkspaceLoading = computed(
   () =>
@@ -161,7 +185,7 @@ async function handleCreateList() {
 async function handleCreateTask() {
   const selectedList = currentList.value;
 
-  if (!selectedList) {
+  if (!selectedList || taskStore.hasActiveTagFilter) {
     return;
   }
 
@@ -198,6 +222,16 @@ async function handleCreateTask() {
     `Created task "${createdTask.title}".`,
     route.path,
   );
+}
+
+async function handleApplyTaskFilter(tag: string) {
+  uiFeedbackStore.clearSuccess();
+  await taskStore.applyTagFilter(tag);
+}
+
+function handleClearTaskFilter() {
+  uiFeedbackStore.clearSuccess();
+  taskStore.clearTagFilter();
 }
 
 function handleSelectList(id: string) {
@@ -368,12 +402,26 @@ async function handleDeleteList() {
           v-model:description="draftTaskDescription"
           v-model:title="draftTaskTitle"
           :error-message="taskCreateErrorMessage"
-          :is-disabled="!isInteractive"
+          :help-message="taskComposerHelpMessage"
+          :is-disabled="isTaskComposerDisabled"
           :is-submitting="taskStore.isCreating"
           @submit="handleCreateTask"
         />
 
+        <FiltersTaskFilterBar
+          v-if="shouldShowTaskFilterBar"
+          :active-tag="taskStore.activeTagFilter"
+          :is-disabled="!isInteractive"
+          :is-loading="taskStore.isLoading"
+          :load-error="taskStore.loadError"
+          :tags="taskStore.availableTaskTags"
+          @clear="handleClearTaskFilter"
+          @select="handleApplyTaskFilter"
+        />
+
         <TasksTaskList
+          :empty-message="taskListEmptyMessage"
+          :empty-test-id="taskListEmptyTestId"
           :is-loading="taskStore.isLoading"
           :load-error="taskStore.loadError"
           :tasks="taskStore.tasks"

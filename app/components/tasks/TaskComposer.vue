@@ -5,11 +5,14 @@ const taskDescription = defineModel<string>("description", { default: "" });
 withDefaults(
   defineProps<{
     errorMessage?: string | null;
+    helpMessage?: string;
     isDisabled?: boolean;
     isSubmitting?: boolean;
   }>(),
   {
     errorMessage: null,
+    helpMessage:
+      "Use a short title for quick scanning and add details only when they help.",
     isDisabled: false,
     isSubmitting: false,
   },
@@ -25,7 +28,7 @@ defineEmits<{
     <p class="workspace-kicker">Add a task</p>
     <h3 id="task-create-title">Capture the next item</h3>
     <p class="field-help">
-      Use a short title for quick scanning and add details only when they help.
+      {{ helpMessage }}
     </p>
 
     <form class="list-form" novalidate @submit.prevent="$emit('submit')">

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { taskTagCollectionSchema } from "./tag";
+import { taskTagCollectionSchema, taskTagNameSchema } from "./tag";
 
 export const entityIdSchema = z.string().trim().min(1);
 export const isoTimestampSchema = z.string().datetime({ offset: true });
@@ -46,6 +46,8 @@ export const updateTaskRequestSchema = z.object({
   tags: taskTagCollectionSchema.optional(),
   title: taskTitleSchema,
 });
+
+export const taskListFilterTagSchema = taskTagNameSchema.optional();
 
 export const todoListSchema = z.object({
   createdAt: isoTimestampSchema,

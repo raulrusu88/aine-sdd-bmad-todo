@@ -116,6 +116,17 @@ function validateTaskUpdateInput(input: UpdateTaskRequest): UpdateTaskRequest {
   return validationResult.data;
 }
 
+function filterTasksByTag(tasks: Task[], tag: TaskTag): Task[] {
+  const normalizedTagName = normalizeTaskTagNameForComparison(tag);
+
+  return tasks.filter((task) =>
+    task.tags.some(
+      (taskTag) =>
+        normalizeTaskTagNameForComparison(taskTag) === normalizedTagName,
+    ),
+  );
+}
+
 export async function getTasksByListId(listId: string, database?: DbClient) {
   const parentList = await findTodoListById(listId, database);
 
@@ -138,6 +149,17 @@ export async function getTasksByListId(listId: string, database?: DbClient) {
 
   return records.map((record) =>
     mapTaskRecordToTask(record, tagsByTaskId[record.id] ?? []),
+  );
+}
+
+export async function getTasksByListIdAndTag(
+  listId: string,
+  tag: string,
+  database?: DbClient,
+) {
+  return filterTasksByTag(
+    await getTasksByListId(listId, database),
+    normalizeTaskTagName(tag),
   );
 }
 
